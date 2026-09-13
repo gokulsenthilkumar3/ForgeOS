@@ -1,0 +1,109 @@
+package cloudapi
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"math"
+	"net/http"
+	"time"
+
+	k6cloud "github.com/grafana/k6-cloud-openapi-client-go/k6"
+	"github.com/sirupsen/logrus"
+	"go.k6.io/k6/v2/errext"
+	"go.k6.io/k6/v2/internal/cloudapi/clientcfg"
+	"go.k6.io/k6/v2/internal/cloudapi/httperr"
+)
+
+// Client handles communication with the k6 Cloud API.
+type Client struct {
+	apiClient *k6cloud.APIClient
+	token     string
+	stackID   int32
+	baseURL   string
+
+	logger logrus.FieldLogger
+}
+
+// NewClient return a new client for the cloud API
+func NewClient(logger logrus.FieldLogger, token, host, version string, timeout time.Duration) (*Client, error) {
+	if token == "" {
+		return nil, fmt.Errorf("token is required to create cloud API client")
+	}
+
+	cfg := clientcfg.New(host, version, "Global k6 Cloud API.", timeout)
+
+	c := &Client{
+		apiClient: k6cloud.NewAPIClient(cfg),
+		token:     token,
+		baseURL:   fmt.Sprintf("%s/cloud/v6", host),
+		logger:    logger,
+	}
+	return c, nil
+}
+
+// SetStackID sets the stack ID for the client. It returns an error if
+// stackID does not fit in the int32 range the underlying SDK requires for
+// the X-Stack-Id header.
+func (c *Client) SetStackID(stackID int64) error {
+	if stackID < math.MinInt32 || stackID > math.MaxInt32 {
+		return fmt.Errorf("stack ID %d overflows int32", stackID)
+	}
+	c.stackID = int32(stackID)
+	return nil
+}
+
+// BaseURL returns configured host.
+func (c *Client) BaseURL() string {
+	return c.baseURL
+}
+
+// CheckResponse checks the parsed response.
+// It returns nil if the code is in the successful range,
+// otherwise it tries to parse the body and return a parsed error.
+func CheckResponse(r *http.Response, err error) error {
+	if err != nil {
+		if _, ok := errors.AsType[*k6cloud.GenericOpenAPIError](err); !ok {
+			return err
+		}
+	}
+
+	if r == nil {
+		return errUnknown
+	}
+
+	if c := r.StatusCode; c >= 200 && c <= 299 {
+		return nil
+	}
+
+	data, err := io.ReadAll(r.Body)
+	if err != nil {
+		return err
+	}
+
+	var respErr error
+	var payload ResponseError
+	if err := json.Unmarshal(data, &payload); err != nil {
+		if classified := httperr.ClassifyStatus(r.StatusCode); classified != nil {
+			respErr = classified
+		} else {
+			respErr = fmt.Errorf(
+				"unexpected HTTP error from %s: %d %s",
+				r.Request.URL,
+				r.StatusCode,
+				http.StatusText(r.StatusCode),
+			)
+		}
+	} else {
+		payload.Response = r
+		respErr = payload
+	}
+
+	if r.StatusCode == http.StatusUnauthorized {
+		return errext.WithHint(respErr,
+			"Authenticate by running `k6 cloud login` "+
+				"or verify the active Grafana Cloud token (K6_CLOUD_TOKEN, options.cloud.token)")
+	}
+	return respErr
+}

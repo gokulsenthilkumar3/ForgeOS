@@ -1,0 +1,16 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: forgeos-api }
+spec:
+  replicas: 2
+  selector: { matchLabels: { app: forgeos-api } }
+  template:
+    metadata: { labels: { app: forgeos-api } }
+    spec:
+      containers:
+        - name: api
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          env:
+            - { name: FORGEOS_MODE, value: "{{ .Values.config.mode }}" }
+            - { name: OTEL_SERVICE_NAME, value: forgeos-api }
+          ports: [{ containerPort: 4000 }]

@@ -1,0 +1,10 @@
+{
+  "name": "@dbpulse/connector-mysql",
+  "version": "0.0.1",
+  "main": "index.ts",
+  "dependencies": {
+    "mysql2": "^3.6.0",
+    "zongji": "^0.5.2",
+    "@dbpulse/shared": "workspace:*"
+  }
+}

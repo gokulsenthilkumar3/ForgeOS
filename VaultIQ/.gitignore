@@ -1,0 +1,49 @@
+# Dependencies
+node_modules/
+.next/
+dist/
+build/
+
+# Next.js static export output — build artifacts, should not be versioned
+frontend/out/
+
+# Environment
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Prisma
+/backend/prisma/migrations/
+/backend/prisma/*.db
+/backend/prisma/*.db-journal
+
+# Test coverage
+coverage/
+*.lcov
+
+# Binary / large media files (store via CDN or Git LFS instead)
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.webp
+*.mp4
+*.zip

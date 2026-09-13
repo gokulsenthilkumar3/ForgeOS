@@ -1,0 +1,27 @@
+services:
+  web:
+    build: { context: ., dockerfile: apps/web/Dockerfile }
+    environment: { NEXT_PUBLIC_API_URL: http://localhost:4000/v1 }
+    ports: ["3000:3000"]
+    depends_on: [api]
+  api:
+    build: { context: ., dockerfile: apps/api/Dockerfile }
+    environment:
+      FORGEOS_MODE: self-hosted
+      PORT: 4000
+      DATABASE_URL: postgresql://forgeos:forgeos@postgres:5432/forgeos
+      REDIS_URL: redis://redis:6379
+    ports: ["4000:4000"]
+    depends_on: [postgres, redis]
+  postgres:
+    image: postgres:16-alpine
+    environment: { POSTGRES_USER: forgeos, POSTGRES_PASSWORD: forgeos, POSTGRES_DB: forgeos }
+    ports: ["5432:5432"]
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+  minio:
+    image: minio/minio
+    command: server /data --console-address :9001
+    environment: { MINIO_ROOT_USER: forgeos, MINIO_ROOT_PASSWORD: forgeos-local-password }
+    ports: ["9000:9000", "9001:9001"]

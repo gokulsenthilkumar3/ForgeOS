@@ -1,0 +1,565 @@
+// Package cloud implements an Output that flushes to the k6 Cloud platform.
+package cloud
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"net/http"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/sirupsen/logrus"
+	"gopkg.in/guregu/null.v3"
+
+	"go.k6.io/k6/v2/cloudapi"
+	"go.k6.io/k6/v2/errext"
+	"go.k6.io/k6/v2/internal/build"
+	"go.k6.io/k6/v2/internal/cloudapi/provisioning"
+	"go.k6.io/k6/v2/internal/usage"
+	"go.k6.io/k6/v2/lib"
+	"go.k6.io/k6/v2/metrics"
+	"go.k6.io/k6/v2/output"
+	cloudv2 "go.k6.io/k6/v2/output/cloud/expv2"
+)
+
+const (
+	defaultTestName = "k6 test"
+	testRunIDKey    = "K6_CLOUDRUN_TEST_RUN_ID"
+)
+
+// versionedOutput represents an output implementing
+// metrics samples aggregation and flushing to the
+// Cloud remote service.
+//
+// It mainly differs from output.Output
+// because it does not define Stop (that is deprecated)
+// and Description.
+type versionedOutput interface {
+	Start() error
+	StopWithTestError(testRunErr error) error
+
+	SetTestRunStopCallback(func(error))
+	SetTestRunID(id string)
+
+	AddMetricSamples(samples []metrics.SampleContainer)
+}
+
+// cloudClient is the interface used to manage test runs in the Cloud service.
+// It allows tests to inject a mock without starting a real HTTP server.
+type cloudClient interface {
+	CreateTestRun(testRun *cloudapi.TestRun) (*cloudapi.CreateTestRunResponse, error)
+	TestFinished(referenceID string, thresholds cloudapi.ThresholdResult, tainted bool, runStatus cloudapi.RunStatus) error
+}
+
+// metricsPusher is the metrics-push HTTP layer used in provisioning mode.
+// Production implementation: *provisioning.HTTPClient.
+// Tests inject mocks via field assignment.
+type metricsPusher interface {
+	Do(req *http.Request, v any) error
+}
+
+// provisioningNotifier is the orchestrator-level client used to call notify
+// at end-of-test in provisioning mode.
+// Production implementation: *provisioning.Client.
+// Tests inject mocks via field assignment.
+type provisioningNotifier interface {
+	NotifyTestRunCompleted(ctx context.Context, testRunID int64, token string, testErr error) error
+}
+
+// logDrainer flushes buffered cloud logs so they reach the backend before the
+// run is notified complete (afterwards the backend rejects late pushes). Kept
+// structural (no import of internal/log/cloud) to avoid coupling the output to
+// that package. Production implementation: *cloudlog.Pusher.
+type logDrainer interface {
+	Drain(context.Context) error
+}
+
+type apiVersion int64
+
+const (
+	apiVersionUndefined apiVersion = iota
+	apiVersion1                    // disabled
+	apiVersion2
+)
+
+// Output sends result data to the k6 Cloud service.
+type Output struct {
+	versionedOutput
+
+	logger    logrus.FieldLogger
+	config    cloudapi.Config
+	testRunID string
+
+	executionPlan []lib.ExecutionStep
+	duration      int64 // in seconds
+	thresholds    map[string][]*metrics.Threshold
+
+	// testArchive is the test archive to be uploaded to the cloud
+	// before the output is Start()-ed.
+	//
+	// It is set by the SetArchive method. If it is nil, the output
+	// will not upload any test archive, such as when the user
+	// uses the --no-archive-upload flag.
+	testArchive *lib.Archive
+
+	client       cloudClient
+	testStopFunc func(error)
+
+	// Provisioning-mode dependencies. nil for --out cloud and PushRefID;
+	// lazy-constructed in Start when Config.MetricsPushURL.Valid.
+	// Tests inject mocks via field assignment.
+	metricsPusher        metricsPusher
+	provisioningNotifier provisioningNotifier
+
+	// provisioningMode gates the provisioning-mode runtime path. Set in
+	// lazyInitProvisioning after both deps are constructed; read by
+	// startVersionedOutput and testFinished.
+	provisioningMode bool
+
+	// logDrainer, when set, is flushed before notify so in-run logs land while
+	// the run is still open. nil for --out cloud / --no-cloud-logs.
+	logDrainer logDrainer
+
+	usage *usage.Usage
+}
+
+// Verify that Output implements the wanted interfaces
+var _ interface {
+	output.WithStopWithTestError
+	output.WithThresholds
+	output.WithTestRunStop
+} = &Output{}
+
+// New creates a new cloud output.
+func New(params output.Params) (output.Output, error) {
+	return newOutput(params)
+}
+
+// New creates a new cloud output.
+func newOutput(params output.Params) (*Output, error) {
+	conf, warn, err := cloudapi.GetConsolidatedConfig(
+		params.JSONConfig,
+		params.Environment,
+		params.ConfigArgument,
+		params.ScriptOptions.Cloud,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	if warn != "" {
+		params.Logger.Warn(warn)
+	}
+
+	if err := validateRequiredSystemTags(params.ScriptOptions.SystemTags); err != nil {
+		return nil, err
+	}
+
+	logger := params.Logger.WithFields(logrus.Fields{"output": "cloud"})
+
+	if !conf.Name.Valid || conf.Name.String == "" {
+		scriptPath := params.ScriptPath.String()
+		if scriptPath == "" {
+			// Script from stdin without a name, likely from stdin
+			return nil, errors.New("script name not set, please specify K6_CLOUD_NAME or options.cloud.name")
+		}
+
+		conf.Name = null.StringFrom(filepath.Base(scriptPath))
+	}
+	if conf.Name.String == "-" {
+		conf.Name = null.StringFrom(defaultTestName)
+	}
+
+	duration, testEnds := lib.GetEndOffset(params.ExecutionPlan)
+	if !testEnds {
+		return nil, errors.New("tests with unspecified duration are not allowed when outputting data to k6 cloud")
+	}
+
+	if conf.MetricPushConcurrency.Int64 < 1 {
+		return nil, fmt.Errorf("metrics push concurrency must be a positive number but is %d",
+			conf.MetricPushConcurrency.Int64)
+	}
+
+	if conf.MaxTimeSeriesInBatch.Int64 < 1 {
+		return nil, fmt.Errorf("max allowed number of time series in a single batch must be a positive number but is %d",
+			conf.MaxTimeSeriesInBatch.Int64)
+	}
+
+	apiClient := cloudapi.NewClient(
+		logger, conf.Token.String, conf.Host.String, build.Version, conf.Timeout.TimeDuration())
+
+	return &Output{
+		config:        conf,
+		client:        apiClient,
+		executionPlan: params.ExecutionPlan,
+		duration:      int64(duration / time.Second),
+		logger:        logger,
+		usage:         params.Usage,
+		testRunID:     params.RuntimeOptions.Env[testRunIDKey],
+	}, nil
+}
+
+// validateRequiredSystemTags checks if all required tags are present.
+func validateRequiredSystemTags(scriptTags *metrics.SystemTagSet) error {
+	missingRequiredTags := []string{}
+	requiredTags := metrics.SystemTagSet(metrics.TagName |
+		metrics.TagMethod |
+		metrics.TagStatus |
+		metrics.TagError |
+		metrics.TagCheck |
+		metrics.TagGroup)
+	for _, tag := range metrics.SystemTagValues() {
+		if requiredTags.Has(tag) && !scriptTags.Has(tag) {
+			missingRequiredTags = append(missingRequiredTags, tag.String())
+		}
+	}
+	if len(missingRequiredTags) > 0 {
+		return fmt.Errorf(
+			"the cloud output needs the following system tags enabled: %s",
+			strings.Join(missingRequiredTags, ", "),
+		)
+	}
+	return nil
+}
+
+// Start calls the k6 Cloud API to initialize the test run, and then starts the
+// goroutine that would listen for metric samples and send them to the cloud.
+func (out *Output) Start() error {
+	if out.config.PushRefID.Valid {
+		out.testRunID = out.config.PushRefID.String
+	}
+
+	if out.testRunID != "" {
+		out.logger.WithField("testRunId", out.testRunID).Debug("Directly pushing metrics without init")
+
+		// Exactly one of the scoped push creds set is a misconfiguration.
+		// The cmd layer already validates this for the externally-provisioned
+		// env case (internal/cmd/outputs_cloud.go); this is the defensive
+		// backstop for any other source (e.g. a hand-written cloud config).
+		if out.config.MetricsPushURL.Valid != out.config.TestRunToken.Valid {
+			return errors.New(
+				"both K6_CLOUD_METRICS_PUSH_URL and K6_CLOUD_TEST_RUN_TOKEN " +
+					"must be set together")
+		}
+
+		// Provisioning-mode push. Armed whenever the scoped push credentials
+		// are present: either k6 self-provisioned (no PushRefID) or an external
+		// service provisioned the run and its creds were injected into the
+		// cloud config by the cmd layer (PushRefID set; that service owns
+		// create/start/notify).
+		if out.config.MetricsPushURL.Valid && out.config.TestRunToken.Valid {
+			if err := out.lazyInitProvisioning(); err != nil {
+				return err
+			}
+		}
+
+		return out.startVersionedOutput()
+	}
+
+	thresholds := make(map[string][]string)
+	for name, t := range out.thresholds {
+		for _, threshold := range t {
+			thresholds[name] = append(thresholds[name], threshold.Source)
+		}
+	}
+
+	testRun := &cloudapi.TestRun{
+		Name:       out.config.Name.String,
+		ProjectID:  out.config.ProjectID.Int64,
+		VUsMax:     int64(lib.GetMaxPossibleVUs(out.executionPlan)), //nolint:gosec
+		Thresholds: thresholds,
+		Duration:   out.duration,
+		Archive:    out.testArchive,
+	}
+
+	response, err := out.client.CreateTestRun(testRun)
+	if err != nil {
+		return err
+	}
+	out.testRunID = response.ReferenceID
+
+	if response.ConfigOverride != nil {
+		out.logger.WithFields(logrus.Fields{
+			"override": response.ConfigOverride,
+		}).Debug("overriding config options")
+		out.config = out.config.Apply(*response.ConfigOverride)
+	}
+
+	err = out.startVersionedOutput()
+	if err != nil {
+		return fmt.Errorf("the Gateway Output failed to start a versioned output: %w", err)
+	}
+
+	out.logger.WithFields(logrus.Fields{
+		"name":      out.config.Name,
+		"projectId": out.config.ProjectID,
+		"duration":  out.duration,
+		"testRunId": out.testRunID,
+	}).Debug("Started!")
+	return nil
+}
+
+// Description returns the URL with the test run results.
+func (out *Output) Description() string {
+	return fmt.Sprintf("cloud (%s)", cloudapi.URLForResults(out.testRunID, out.config))
+}
+
+// SetThresholds receives the thresholds before the output is Start()-ed.
+func (out *Output) SetThresholds(scriptThresholds map[string]metrics.Thresholds) {
+	thresholds := make(map[string][]*metrics.Threshold)
+	for name, t := range scriptThresholds {
+		thresholds[name] = append(thresholds[name], t.Thresholds...)
+	}
+	out.thresholds = thresholds
+}
+
+// SetTestRunStopCallback receives the function that stops the engine on error
+func (out *Output) SetTestRunStopCallback(stopFunc func(error)) {
+	out.testStopFunc = stopFunc
+}
+
+// SetArchive receives the test artifact to be uploaded to the cloud
+// before the output is Start()-ed.
+func (out *Output) SetArchive(archive *lib.Archive) {
+	out.testArchive = archive
+}
+
+// SetLogDrainer sets the cloud-log drainer flushed before end-of-test notify.
+func (out *Output) SetLogDrainer(d logDrainer) {
+	out.logDrainer = d
+}
+
+var _ output.WithArchive = &Output{}
+
+// Stop gracefully stops all metric emission from the output: when all metric
+// samples are emitted, it makes a cloud API call to finish the test run.
+//
+// Deprecated: use StopWithTestError() instead.
+func (out *Output) Stop() error {
+	return out.StopWithTestError(nil)
+}
+
+// StopWithTestError gracefully stops all metric emission from the output: when
+// all metric samples are emitted, it makes a cloud API call to finish the test
+// run. If testErr was specified, it extracts the RunStatus from it.
+func (out *Output) StopWithTestError(testErr error) error {
+	err := out.versionedOutput.StopWithTestError(testErr)
+	if err != nil {
+		out.logger.WithError(err).Error("An error occurred stopping the output")
+		// to notify the cloud backend we have no return here
+	}
+
+	// Flush buffered cloud logs before notify: once the run is notified
+	// complete the backend rejects late log pushes, so the final batch would
+	// be lost. The push is already bounded by the loki hook's own HTTP client
+	// timeout, so the drain just waits for it on a fresh context — fresh
+	// because the run's context is already cancelled at shutdown.
+	if out.logDrainer != nil {
+		if err := out.logDrainer.Drain(context.Background()); err != nil {
+			out.logger.WithError(err).Warn("could not drain cloud logs before notify")
+		}
+	}
+
+	out.logger.Debug("Metric emission stopped, calling cloud API...")
+	err = out.testFinished(testErr)
+	if err != nil {
+		out.logger.WithFields(logrus.Fields{"error": err}).Warn("Failed to send test finished to the cloud")
+		return err
+	}
+	out.logger.Debug("Cloud output successfully stopped!")
+	return nil
+}
+
+func (out *Output) testFinished(testErr error) error {
+	if out.testRunID == "" || out.config.PushRefID.Valid {
+		return nil
+	}
+
+	// Provisioning mode: notify instead of legacy TestFinished. Gate on
+	// the explicit flag set by lazyInitProvisioning, not on Config fields.
+	if out.provisioningMode {
+		// The provisioning API test-run IDs are int64; parse the full range.
+		testRunIDInt, err := strconv.ParseInt(out.testRunID, 10, 64)
+		if err != nil {
+			out.logger.WithError(err).Warn("could not parse testRunID for notify; skipping")
+			return nil
+		}
+		return out.provisioningNotifier.NotifyTestRunCompleted(
+			context.Background(),
+			testRunIDInt,
+			out.config.TestRunToken.String,
+			testErr,
+		)
+	}
+
+	testTainted := false
+	thresholdResults := make(cloudapi.ThresholdResult)
+	for name, thresholds := range out.thresholds {
+		thresholdResults[name] = make(map[string]bool)
+		for _, t := range thresholds {
+			thresholdResults[name][t.Source] = t.LastFailed
+			if t.LastFailed {
+				testTainted = true
+			}
+		}
+	}
+
+	runStatus := out.getRunStatus(testErr)
+	out.logger.WithFields(logrus.Fields{
+		"ref":        out.testRunID,
+		"tainted":    testTainted,
+		"run_status": runStatus,
+	}).Debug("Sending test finished")
+
+	return out.client.TestFinished(out.testRunID, thresholdResults, testTainted, runStatus)
+}
+
+// getRunStatus determines the run status of the test based on the error.
+func (out *Output) getRunStatus(testErr error) cloudapi.RunStatus {
+	if testErr == nil {
+		return cloudapi.RunStatusFinished
+	}
+
+	if err, ok := errors.AsType[errext.HasAbortReason](testErr); ok {
+		abortReason := err.AbortReason()
+		switch abortReason {
+		case errext.AbortedByUser:
+			return cloudapi.RunStatusAbortedUser
+		case errext.AbortedByThreshold:
+			return cloudapi.RunStatusAbortedThreshold
+		case errext.AbortedByScriptError:
+			return cloudapi.RunStatusAbortedScriptError
+		case errext.AbortedByScriptAbort:
+			return cloudapi.RunStatusAbortedUser // TODO: have a better value than this?
+		case errext.AbortedByTimeout:
+			return cloudapi.RunStatusAbortedLimit
+		case errext.AbortedByOutput:
+			return cloudapi.RunStatusAbortedSystem
+		case errext.AbortedByThresholdsAfterTestEnd:
+			// The test run finished normally, it wasn't prematurely aborted by
+			// anything while running, but the thresholds failed at the end and
+			// k6 will return an error and a non-zero exit code to the user.
+			//
+			// However, failures are tracked somewhat differently by the k6
+			// cloud compared to k6 OSS. It doesn't have a single pass/fail
+			// variable with multiple failure states, like k6's exit codes.
+			// Instead, it has two variables, result_status and run_status.
+			//
+			// The status of the thresholds is tracked by the binary
+			// result_status variable, which signifies whether the thresholds
+			// passed or failed (failure also called "tainted" in some places of
+			// the API here). The run_status signifies whether the test run
+			// finished normally and has a few fixed failures values.
+			//
+			// So, this specific k6 error will be communicated to the cloud only
+			// via result_status, while the run_status will appear normal.
+			return cloudapi.RunStatusFinished
+		}
+	}
+
+	// By default, the catch-all error is "aborted by system", but let's log that
+	out.logger.WithError(testErr).Debug("unknown test error classified as 'aborted by system'")
+	return cloudapi.RunStatusAbortedSystem
+}
+
+func (out *Output) startVersionedOutput() error {
+	if out.testRunID == "" {
+		return errors.New("TestRunID is required")
+	}
+	var err error
+
+	usageErr := out.usage.Strings("cloud/test_run_id", out.testRunID)
+	if usageErr != nil {
+		out.logger.Warning("Couldn't report test run id to usage as part of writing to k6 cloud")
+	}
+
+	// TODO: move here the creation of a new cloudapi.Client
+	// so in the case the config has been overwritten the client uses the correct
+	// value.
+	//
+	// This logic is handled individually by each single output, it has the downside
+	// that we could break the logic and not catch easly it.
+
+	switch out.config.APIVersion.Int64 {
+	case int64(apiVersion1):
+		err = errors.New("v1 is not supported anymore")
+	case int64(apiVersion2):
+		out.versionedOutput, err = cloudv2.New(out.logger, out.config, nil)
+		if err != nil {
+			break
+		}
+
+		// Inject provisioning overrides if in provisioning mode.
+		if out.provisioningMode {
+			if v, ok := out.versionedOutput.(*cloudv2.Output); ok {
+				v.SetMetricsHTTPClient(out.metricsPusher)
+				v.SetMetricsURL(out.config.MetricsPushURL.String)
+			}
+		}
+	default:
+		err = fmt.Errorf("v%d is an unexpected version", out.config.APIVersion.Int64)
+	}
+
+	if err != nil {
+		return err
+	}
+
+	out.SetTestRunID(out.testRunID)
+	out.versionedOutput.SetTestRunStopCallback(out.testStopFunc)
+	return out.versionedOutput.Start()
+}
+
+// lazyInitProvisioning constructs the provisioning-mode dependencies
+// (metrics-push HTTP client and provisioning notifier) when they haven't
+// been injected already. Tests inject mocks via field assignment before
+// calling Start.
+func (out *Output) lazyInitProvisioning() error {
+	// Lazy-construct the metrics-push HTTP client if not already injected
+	// (tests inject mocks via field assignment).
+	if out.metricsPusher == nil {
+		// Fresh *http.Client with the configured timeout (mirrors what
+		// cloudapi.Client constructs internally). Body-reset on retries
+		// is handled inside provisioning.HTTPClient.Do (via doWithRetry's
+		// explicit req.GetBody() between attempts), not at the transport
+		// layer — so a vanilla http.Client suffices.
+		httpClient := &http.Client{
+			Timeout: out.config.Timeout.TimeDuration(),
+		}
+		out.metricsPusher = provisioning.NewHTTPClient(
+			httpClient,
+			out.config.TestRunToken.String,
+			build.Version,
+			out.logger,
+		)
+	}
+
+	// Lazy-construct the provisioning notifier (end-of-test notify).
+	// Skipped when PushRefID is set: an external service owns the run
+	// lifecycle, so k6 never notifies (testFinished returns early on
+	// PushRefID) and the notifier would be unused. Invariant: a nil
+	// notifier with provisioningMode true implies PushRefID is set.
+	if out.provisioningNotifier == nil && !out.config.PushRefID.Valid {
+		// The stack ID is required and passed as int64; provisioning.NewClient
+		// enforces the int32 X-Stack-Id boundary internally.
+		c, err := provisioning.NewClient(
+			out.logger,
+			out.config.Token.String, // long-lived k6 token (NOT scoped)
+			out.config.Hostv6.String,
+			build.Version,
+			out.config.StackID.Int64,
+			out.config.Timeout.TimeDuration(),
+		)
+		if err != nil {
+			return fmt.Errorf("provisioning client init: %w", err)
+		}
+		out.provisioningNotifier = c
+	}
+
+	// Both deps constructed; arm the gate.
+	out.provisioningMode = true
+
+	return nil
+}

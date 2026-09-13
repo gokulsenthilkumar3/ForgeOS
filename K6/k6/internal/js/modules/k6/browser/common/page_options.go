@@ -1,0 +1,134 @@
+package common
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"github.com/chromedp/cdproto/page"
+	"github.com/grafana/sobek"
+
+	"go.k6.io/k6/v2/internal/js/modules/k6/browser/k6ext"
+	"go.k6.io/k6/v2/js/common"
+)
+
+type PageEmulateMediaOptions struct {
+	ColorScheme   ColorScheme   `json:"colorScheme"`
+	Media         MediaType     `json:"media"`
+	ReducedMotion ReducedMotion `json:"reducedMotion"`
+}
+
+type PageReloadOptions struct {
+	WaitUntil LifecycleEvent `json:"waitUntil" js:"waitUntil"`
+	Timeout   time.Duration  `json:"timeout"`
+}
+
+type PageScreenshotOptions struct {
+	Clip           *page.Viewport `json:"clip"`
+	Path           string         `json:"path"`
+	Format         ImageFormat    `json:"format"`
+	FullPage       bool           `json:"fullPage"`
+	OmitBackground bool           `json:"omitBackground"`
+	Quality        int64          `json:"quality"`
+}
+
+// PageGoBackForwardOptions are options for Page.GoBack and Page.GoForward.
+type PageGoBackForwardOptions struct {
+	WaitUntil LifecycleEvent `json:"waitUntil"`
+	Timeout   time.Duration  `json:"timeout"`
+}
+
+func NewPageEmulateMediaOptions(from *Page) *PageEmulateMediaOptions {
+	return &PageEmulateMediaOptions{
+		ColorScheme:   from.colorScheme,
+		Media:         from.mediaType,
+		ReducedMotion: from.reducedMotion,
+	}
+}
+
+func NewPageReloadOptions(defaultWaitUntil LifecycleEvent, defaultTimeout time.Duration) *PageReloadOptions {
+	return &PageReloadOptions{
+		WaitUntil: defaultWaitUntil,
+		Timeout:   defaultTimeout,
+	}
+}
+
+// NewPageGoBackForwardOptions returns a new PageGoBackForwardOptions.
+func NewPageGoBackForwardOptions(
+	defaultWaitUntil LifecycleEvent,
+	defaultTimeout time.Duration,
+) *PageGoBackForwardOptions {
+	return &PageGoBackForwardOptions{
+		WaitUntil: defaultWaitUntil,
+		Timeout:   defaultTimeout,
+	}
+}
+
+// Parse parses the page go back/forward options.
+func (o *PageGoBackForwardOptions) Parse(ctx context.Context, opts sobek.Value) error {
+	if common.IsNullish(opts) {
+		return nil
+	}
+
+	obj := opts.ToObject(k6ext.Runtime(ctx))
+	for _, k := range obj.Keys() {
+		switch k {
+		case "waitUntil":
+			lifeCycle := obj.Get(k).String()
+			if l, ok := lifecycleEventToID[lifeCycle]; ok {
+				o.WaitUntil = l
+			} else {
+				return fmt.Errorf("%q is not a valid lifecycle", lifeCycle)
+			}
+		case "timeout":
+			o.Timeout = time.Duration(obj.Get(k).ToInteger()) * time.Millisecond
+		}
+	}
+
+	return nil
+}
+
+// Parse parses the page reload options.
+func (o *PageReloadOptions) Parse(ctx context.Context, opts sobek.Value) error {
+	rt := k6ext.Runtime(ctx)
+	if !common.IsNullish(opts) {
+		opts := opts.ToObject(rt)
+		for _, k := range opts.Keys() {
+			switch k {
+			case "waitUntil":
+				lifeCycle := opts.Get(k).String()
+				if l, ok := lifecycleEventToID[lifeCycle]; ok {
+					o.WaitUntil = l
+				} else {
+					return fmt.Errorf("%q is not a valid lifecycle", lifeCycle)
+				}
+			case "timeout":
+				o.Timeout = time.Duration(opts.Get(k).ToInteger()) * time.Millisecond
+			}
+		}
+	}
+	return nil
+}
+
+func NewPageScreenshotOptions() *PageScreenshotOptions {
+	return &PageScreenshotOptions{
+		Clip:           nil,
+		Path:           "",
+		Format:         ImageFormatPNG,
+		FullPage:       false,
+		OmitBackground: false,
+		Quality:        100,
+	}
+}
+
+// PageWaitForResponseOptions are options for Page.waitForResponse.
+type PageWaitForResponseOptions struct {
+	Timeout time.Duration
+}
+
+// NewPageWaitForResponseOptions returns a new PageWaitForResponseOptions.
+func NewPageWaitForResponseOptions(defaultTimeout time.Duration) *PageWaitForResponseOptions {
+	return &PageWaitForResponseOptions{
+		Timeout: defaultTimeout,
+	}
+}

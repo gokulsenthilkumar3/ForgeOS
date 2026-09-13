@@ -1,0 +1,685 @@
+package common
+
+import (
+	"context"
+	"crypto/tls"
+	"errors"
+	"fmt"
+	"net/http"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"go.k6.io/k6/v2/internal/js/modules/k6/browser/log"
+
+	"github.com/chromedp/cdproto"
+	"github.com/chromedp/cdproto/cdp"
+	cdpruntime "github.com/chromedp/cdproto/runtime"
+	"github.com/chromedp/cdproto/target"
+	jsonv2 "github.com/go-json-experiment/json"
+	"github.com/go-json-experiment/json/jsontext"
+	"github.com/gorilla/websocket"
+)
+
+const wsWriteBufferSize = 1 << 20
+
+// Each connection needs its own msgID. A msgID will be used by the
+// connection and associated sessions. When a CDP request is made to
+// chrome, it's best to work with unique ids to avoid the Execute
+// handlers working with the wrong response, or handlers deadlocking
+// when their response is rerouted to the wrong handler.
+//
+// Use the msgIDGenerator interface to abstract `id` away.
+type msgID struct {
+	id int64
+}
+
+//nolint:gochecknoglobals
+var defaultJSONV2Options = jsonv2.JoinOptions(
+	jsonv2.DefaultOptionsV2(),
+	jsontext.AllowInvalidUTF8(true), // this is needed as chromium sometimes returns invalid utf-8
+)
+
+func (m *msgID) newID() int64 {
+	return atomic.AddInt64(&m.id, 1)
+}
+
+type msgIDGenerator interface {
+	newID() int64
+}
+
+type executorEmitter interface {
+	cdp.Executor
+	EventEmitter
+}
+
+type connection interface {
+	executorEmitter
+	Close()
+	IgnoreIOErrors()
+	getSession(target.SessionID) *Session
+}
+
+type session interface {
+	cdp.Executor
+	executorEmitter
+	ExecuteWithoutExpectationOnReply(context.Context, string, any, any) error
+	ID() target.SessionID
+	TargetID() target.ID
+	Done() <-chan struct{}
+}
+
+// Action is the general interface of an CDP action.
+type Action interface {
+	Do(context.Context) error
+}
+
+// ActionFunc is an adapter to allow regular functions to be used as an Action.
+type ActionFunc func(context.Context) error
+
+// Do executes the func f using the provided context.
+func (f ActionFunc) Do(ctx context.Context) error {
+	return f(ctx)
+}
+
+// Connection represents a WebSocket connection and the root "Browser Session".
+//
+//	                                          ┌───────────────────────────────────────────────────────────────────┐
+//	                                          │                                                                   │
+//	                                          │                          Browser Process                          │
+//	                                          │                                                                   │
+//	                                          └───────────────────────────────────────────────────────────────────┘
+//	┌───────────────────────────┐                                           │      ▲
+//	│Reads JSON-RPC CDP messages│                                           │      │
+//	│from WS connection and puts│                                           ▼      │
+//	│ them on incoming queue of │             ┌───────────────────────────────────────────────────────────────────┐
+//	│    target session, as     ├─────────────■                                                                   │
+//	│   identified by message   │             │                       WebSocket Connection                        │
+//	│   session ID. Messages    │             │                                                                   │
+//	│ without a session ID are  │             └───────────────────────────────────────────────────────────────────┘
+//	│considered to belong to the│                    │      ▲                                       │      ▲
+//	│  root "Browser Session".  │                    │      │                                       │      │
+//	└───────────────────────────┘                    ▼      │                                       ▼      │
+//	┌───────────────────────────┐             ┌────────────────────┐                         ┌────────────────────┐
+//	│  Handles CDP messages on  ├─────────────■                    │                         │                    │
+//	│incoming queue and puts CDP│             │      Session       │      *  *  *  *  *      │      Session       │
+//	│   messages on outgoing    │             │                    │                         │                    │
+//	│ channel of WS connection. │             └────────────────────┘                         └────────────────────┘
+//	└───────────────────────────┘                    │      ▲                                       │      ▲
+//	  │      │                                       │      │                                       │      │
+//	  ▼      │                                       ▼      │                                       ▼      │
+//
+//	┌───────────────────────────┐             ┌────────────────────┐                         ┌────────────────────┐
+//	│Registers with session as a├─────────────■                    │                         │                    │
+//	│handler for a specific CDP │             │   Event Listener   │      *  *  *  *  *      │   Event Listener   │
+//	│       Domain event.       │             │                    │                         │                    │
+//	└───────────────────────────┘             └────────────────────┘                         └────────────────────┘
+type Connection struct {
+	BaseEventEmitter
+
+	ctx          context.Context
+	cancelCtx    context.CancelCauseFunc
+	wsURL        string
+	logger       *log.Logger
+	conn         *websocket.Conn
+	sendCh       chan *cdproto.Message
+	recvCh       chan *cdproto.Message
+	closeCh      chan int
+	errorCh      chan error
+	done         chan struct{}
+	closing      chan struct{}
+	shutdownOnce sync.Once
+	msgIDGen     msgIDGenerator
+
+	sessionsMu sync.RWMutex
+	sessions   map[target.SessionID]*Session
+
+	// onTargetAttachedToTarget is called when a new target is attached to
+	// the browser. The target's session is registered before the call, so
+	// that the response to the release below can be routed back to it.
+	// Returning false releases the target: it is resumed and detached from
+	// instead of being adopted. If onTargetAttachedToTarget is nil, every
+	// target is adopted.
+	onTargetAttachedToTarget func(*target.EventAttachedToTarget) bool
+}
+
+// NewConnection creates a new browser.
+func NewConnection(
+	ctx context.Context,
+	wsURL string,
+	logger *log.Logger,
+	onTargetAttachedToTarget func(*target.EventAttachedToTarget) bool,
+) (*Connection, error) {
+	var header http.Header
+	var tlsConfig *tls.Config
+	wsd := websocket.Dialer{
+		HandshakeTimeout: time.Second * 60,
+		Proxy:            http.ProxyFromEnvironment, // TODO(fix): use proxy settings from launch options
+		TLSClientConfig:  tlsConfig,
+		WriteBufferSize:  wsWriteBufferSize,
+		ReadBufferSize:   wsWriteBufferSize,
+	}
+
+	ctx, cancelCtx := context.WithCancelCause(ctx)
+
+	conn, response, connErr := wsd.DialContext(ctx, wsURL, header)
+	if response != nil {
+		defer func() {
+			_ = response.Body.Close()
+		}()
+	}
+	if connErr != nil {
+		cancelCtx(fmt.Errorf("failed to dial websocket at %s: %w", wsURL, connErr))
+		return nil, connErr
+	}
+
+	c := Connection{
+		BaseEventEmitter:         NewBaseEventEmitter(ctx),
+		ctx:                      ctx,
+		cancelCtx:                cancelCtx,
+		wsURL:                    wsURL,
+		logger:                   logger,
+		conn:                     conn,
+		sendCh:                   make(chan *cdproto.Message, 32), // Avoid blocking in Execute
+		recvCh:                   make(chan *cdproto.Message),
+		closeCh:                  make(chan int),
+		errorCh:                  make(chan error),
+		done:                     make(chan struct{}),
+		closing:                  make(chan struct{}),
+		msgIDGen:                 &msgID{},
+		sessions:                 make(map[target.SessionID]*Session),
+		onTargetAttachedToTarget: onTargetAttachedToTarget,
+	}
+
+	go c.recvLoop()
+	go c.sendLoop()
+
+	return &c, nil
+}
+
+func (c *Connection) close(code int) error {
+	c.logger.Debugf("Connection:close", "code:%d", code)
+
+	defer func() {
+		c.cancelCtx(fmt.Errorf("connection closed with websocket code: %d", code))
+	}()
+
+	var err error
+	c.shutdownOnce.Do(func() {
+		defer func() {
+			// Stop the main control loop
+			close(c.done)
+			_ = c.conn.Close()
+		}()
+
+		c.closeAllSessions()
+
+		err = c.conn.WriteControl(websocket.CloseMessage,
+			websocket.FormatCloseMessage(code, ""),
+			time.Now().Add(time.Second),
+		)
+
+		// According to the WS RFC[1], we might want to wait for a response
+		// Control frame back from the browser here (possibly for the above
+		// timeout duration), but Chrom{e,ium} never sends one, even when
+		// the browser process exits normally after the Browser.close CDP
+		// command. So we don't bother waiting, since it would just needlessly
+		// delay the k6 iteration.
+		// [1]: https://www.rfc-editor.org/rfc/rfc6455#section-1.4
+
+		c.emit(EventConnectionClose, nil)
+	})
+
+	return err
+}
+
+// closeSession closes the session with the given session ID.
+// It returns true if the session was found and closed, false otherwise.
+func (c *Connection) closeSession(sid target.SessionID, tid target.ID) bool {
+	c.logger.Debugf("Connection:closeSession", "sid:%v tid:%v wsURL:%v", sid, tid, c.wsURL)
+
+	c.sessionsMu.Lock()
+	defer c.sessionsMu.Unlock()
+
+	session, ok := c.sessions[sid]
+	if !ok {
+		return false
+	}
+	session.close()
+	delete(c.sessions, sid)
+
+	return true
+}
+
+func (c *Connection) closeAllSessions() {
+	c.logger.Debugf("Connection:closeAllSessions", "wsURL:%v", c.wsURL)
+
+	c.sessionsMu.Lock()
+	for _, s := range c.sessions {
+		s.close()
+		delete(c.sessions, s.id)
+	}
+	c.sessionsMu.Unlock()
+}
+
+func (c *Connection) createSession(info *target.Info) (*Session, error) {
+	c.logger.Debugf("Connection:createSession", "tid:%v bctxid:%v type:%s",
+		info.TargetID, info.BrowserContextID, info.Type)
+
+	var sessionID target.SessionID
+	var err error
+	action := target.AttachToTarget(info.TargetID).WithFlatten(true)
+	if sessionID, err = action.Do(cdp.WithExecutor(c.ctx, c)); err != nil {
+		c.logger.Debugf("Connection:createSession", "tid:%v bctxid:%v type:%s err:%v",
+			info.TargetID, info.BrowserContextID, info.Type, err)
+		return nil, err
+	}
+	sess := c.getSession(sessionID)
+	if sess == nil {
+		c.logger.Warnf("Connection:createSession", "tid:%v bctxid:%v type:%s sid:%v, session is nil",
+			info.TargetID, info.BrowserContextID, info.Type, sessionID)
+	}
+	return sess, nil
+}
+
+func (c *Connection) handleIOError(err error) {
+	if closing := c.isClosing(); websocket.IsCloseError(
+		err, websocket.CloseNormalClosure, websocket.CloseGoingAway,
+	) || closing {
+		c.logger.Debugf("cdp", "received IO error: %v, connection is closing: %v", err, closing)
+		return
+	}
+
+	// Report an unexpected closure
+	c.logger.Errorf("cdp", "communicating with browser: %v", err)
+	select {
+	case c.errorCh <- err:
+	case <-c.done:
+		return
+	}
+	var (
+		cerr *websocket.CloseError
+		code = websocket.CloseGoingAway
+	)
+	if errors.As(err, &cerr) {
+		code = cerr.Code
+	}
+	select {
+	case c.closeCh <- code:
+		c.logger.Debugf("cdp", "ending browser communication with code %d", code)
+	case <-c.done:
+		c.logger.Debugf("cdp", "ending browser communication")
+	}
+}
+
+func (c *Connection) getSession(id target.SessionID) *Session {
+	c.sessionsMu.RLock()
+	defer c.sessionsMu.RUnlock()
+
+	return c.sessions[id]
+}
+
+// findTragetIDForLog should only be used for logging purposes.
+// It will return an empty string if logger.DebugMode is false.
+func (c *Connection) findTargetIDForLog(id target.SessionID) target.ID {
+	if !c.logger.DebugMode() {
+		return ""
+	}
+	s := c.getSession(id)
+	if s == nil {
+		return ""
+	}
+	return s.targetID
+}
+
+// deliverToSession routes msg to session's readCh. It reports whether
+// recvLoop should stop reading from the connection entirely.
+//
+// getSession only holds the sessions lock for the lookup, so by the time
+// this runs, session may already be closed (e.g. by closeSession, which
+// can be called concurrently from any goroutine, not just recvLoop): its
+// readLoop may have already exited on its own done channel, leaving no
+// receiver on readCh. Without the <-session.done case, an unbuffered send
+// there would then block forever, since neither c.closeCh nor c.done fire
+// just because one session closed - stalling recvLoop, and with it every
+// other session on the connection.
+func (c *Connection) deliverToSession(session *Session, msg *cdproto.Message) (stop bool) {
+	select {
+	case session.readCh <- msg:
+	case <-session.done:
+		c.logger.Debugf("Connection:deliverToSession:<-session.done", "sid:%v tid:%v wsURL:%q",
+			session.id, session.targetID, c.wsURL)
+	case code := <-c.closeCh:
+		c.logger.Debugf("Connection:deliverToSession:<-c.closeCh", "sid:%v tid:%v wsURL:%v crashed:%t",
+			session.id, session.targetID, c.wsURL, session.crashed)
+		_ = c.close(code)
+	case <-c.done:
+		c.logger.Debugf("Connection:deliverToSession:<-c.done", "sid:%v tid:%v wsURL:%v crashed:%t",
+			session.id, session.targetID, c.wsURL, session.crashed)
+		return true
+	}
+	return false
+}
+
+//nolint:funlen,gocognit
+func (c *Connection) recvLoop() {
+	c.logger.Debugf("Connection:recvLoop", "wsURL:%q", c.wsURL)
+	for {
+		_, reader, err := c.conn.NextReader()
+		if err != nil {
+			c.handleIOError(err)
+			return
+		}
+
+		var msg cdproto.Message
+		err = jsonv2.UnmarshalRead(reader, &msg, defaultJSONV2Options)
+		if err != nil {
+			select {
+			case c.errorCh <- err:
+				c.logger.Debugf("Connection:recvLoop:<-err", "wsURL:%q err:%v", c.wsURL, err)
+			case <-c.done:
+				c.logger.Debugf("Connection:recvLoop:<-c.done", "wsURL:%q", c.wsURL)
+				return
+			}
+		}
+
+		// Handle attachment and detachment from targets,
+		// creating and deleting sessions as necessary.
+		//nolint:nestif
+		if msg.Method == cdproto.EventTargetAttachedToTarget {
+			ev, err := cdproto.UnmarshalMessage(&msg)
+			if err != nil {
+				c.logger.Errorf("cdp", "%s", err)
+				continue
+			}
+			eva := ev.(*target.EventAttachedToTarget) //nolint:forcetypeassert
+			sid, tid := eva.SessionID, eva.TargetInfo.TargetID
+
+			c.sessionsMu.Lock()
+			session := NewSession(c.ctx, c, sid, tid, c.logger, c.msgIDGen)
+			c.logger.Debugf("Connection:recvLoop:EventAttachedToTarget", "sid:%v tid:%v wsURL:%q", sid, tid, c.wsURL)
+			c.sessions[sid] = session
+			c.sessionsMu.Unlock()
+
+			if c.onTargetAttachedToTarget != nil {
+				// If onTargetAttachedToTarget is set, it will be called to
+				// determine if the target should be adopted or released.
+				ok := c.onTargetAttachedToTarget(eva)
+				if !ok {
+					detachSession(session)
+					continue
+				}
+			}
+		} else if msg.Method == cdproto.EventTargetDetachedFromTarget {
+			ev, err := cdproto.UnmarshalMessage(&msg)
+			if err != nil {
+				c.logger.Errorf("cdp", "%s", err)
+				continue
+			}
+			evt := ev.(*target.EventDetachedFromTarget) //nolint:forcetypeassert
+			sid := evt.SessionID
+			tid := c.findTargetIDForLog(sid)
+			ok := c.closeSession(sid, tid)
+			if !ok {
+				c.logger.Debugf(
+					"Connection:recvLoop:EventDetachedFromTarget",
+					"sid:%v tid:%v wsURL:%q, session not found",
+					sid, tid, c.wsURL,
+				)
+
+				continue
+			}
+		}
+
+		switch {
+		case msg.SessionID != "" && (msg.Method != "" || msg.ID != 0):
+			session := c.getSession(msg.SessionID)
+			if session == nil {
+				continue
+			}
+			if msg.Error != nil && msg.Error.Message == "No session with given id" {
+				c.logger.Debugf("Connection:recvLoop", "sid:%v tid:%v wsURL:%q, closeSession #2",
+					session.id, session.targetID, c.wsURL)
+				c.closeSession(session.id, session.targetID)
+				continue
+			}
+
+			if c.deliverToSession(session, &msg) {
+				return
+			}
+
+		case msg.Method != "":
+			c.logger.Debugf("Connection:recvLoop:msg.Method:emit", "sid:%v method:%q", msg.SessionID, msg.Method)
+			ev, err := cdproto.UnmarshalMessage(&msg)
+			if err != nil {
+				c.logger.Errorf("cdp", "%s", err)
+				continue
+			}
+			c.emit(string(msg.Method), ev)
+
+		case msg.ID != 0:
+			c.logger.Debugf("Connection:recvLoop:msg.ID:emit", "sid:%v method:%q", msg.SessionID, msg.Method)
+			c.emit("", &msg)
+
+		default:
+			c.logger.Errorf("cdp", "ignoring malformed incoming message (missing id or method): %#v (message: %s)",
+				msg, msg.Error.Message)
+		}
+	}
+}
+
+// detachSession resumes a rejected target's session, awaits the response,
+// then detaches from it. Detaching alone should release the target, but the
+// browser has a bug where a detached target can stay paused, so the resume
+// must land first — the same workaround as Playwright's CRSession.detach
+// (crConnection.ts). The wait is bounded so an unresponsive target is still
+// detached from. Best-effort: errors are not returned. Target.detachFromTarget
+// is browser-level: the session goes in the params, not the message's
+// session ID.
+//
+// The session is also closed locally here, rather than left for the
+// browser's own Target.detachedFromTarget event to reap: that event isn't
+// guaranteed to arrive (e.g. if the detach command itself errors), and
+// waiting for it would leak the session's goroutine and its entry in the
+// connection's sessions map until the whole connection closes.
+func detachSession(session *Session) {
+	go func() {
+		c := session.conn
+		defer c.closeSession(session.id, session.targetID)
+
+		ctx, cancel := context.WithTimeout(c.ctx, DefaultTimeout)
+		defer cancel()
+		_ = session.Execute(ctx, cdpruntime.CommandRunIfWaitingForDebugger, nil, nil)
+
+		buf, err := jsonv2.Marshal(&target.DetachFromTargetParams{SessionID: session.id}, defaultJSONV2Options)
+		if err != nil {
+			c.logger.Errorf("Connection:detachSession", "sid:%v wsURL:%q, err:%v", session.id, c.wsURL, err)
+			return
+		}
+		msg := &cdproto.Message{
+			ID:     c.msgIDGen.newID(),
+			Method: cdproto.MethodType(target.CommandDetachFromTarget),
+			Params: buf,
+		}
+		if err := c.send(c.ctx, msg, nil, nil); err != nil {
+			c.logger.Errorf("Connection:detachSession", "sid:%v wsURL:%q, err:%v", session.id, c.wsURL, err)
+		}
+	}()
+}
+
+func (c *Connection) send(
+	ctx context.Context, msg *cdproto.Message, recvCh chan *cdproto.Message, res any,
+) error {
+	select {
+	case c.sendCh <- msg:
+	case err := <-c.errorCh:
+		c.logger.Debugf("Connection:send:<-c.errorCh", "wsURL:%q sid:%v, err:%v", c.wsURL, msg.SessionID, err)
+		return fmt.Errorf("sending a message to browser: %w", err)
+	case code := <-c.closeCh:
+		c.logger.Debugf("Connection:send:<-c.closeCh", "wsURL:%q sid:%v, websocket code:%v", c.wsURL, msg.SessionID, code)
+		_ = c.close(code)
+		return fmt.Errorf("closing communication with browser: %w", &websocket.CloseError{Code: code})
+	case <-ctx.Done():
+		c.logger.Debugf("Connection:send:<-ctx.Done", "wsURL:%q sid:%v err:%v", c.wsURL, msg.SessionID, ContextErr(ctx))
+		return nil
+	case <-c.done:
+		c.logger.Debugf("Connection:send:<-c.done", "wsURL:%q sid:%v", c.wsURL, msg.SessionID)
+		return nil
+	}
+
+	// Block waiting for response.
+	if recvCh == nil {
+		return nil
+	}
+	tid := c.findTargetIDForLog(msg.SessionID)
+	select {
+	case msg := <-recvCh:
+		var sid target.SessionID
+		tid = ""
+		if msg != nil {
+			sid = msg.SessionID
+			tid = c.findTargetIDForLog(sid)
+		}
+		switch {
+		case msg == nil:
+			c.logger.Debugf("Connection:send", "wsURL:%q, err:ErrChannelClosed", c.wsURL)
+			return ErrChannelClosed
+		case msg.Error != nil:
+			c.logger.Debugf("Connection:send", "sid:%v tid:%v wsURL:%q, msg err:%v", sid, tid, c.wsURL, msg.Error)
+			return msg.Error
+		case res != nil:
+			return jsonv2.Unmarshal(msg.Result, res, defaultJSONV2Options)
+		}
+		return nil
+	case err := <-c.errorCh:
+		c.logger.Debugf("Connection:send:<-c.errorCh #2", "sid:%v tid:%v wsURL:%q, err:%v", msg.SessionID, tid, c.wsURL, err)
+		return err
+	case code := <-c.closeCh:
+		c.logger.Debugf("Connection:send:<-c.closeCh #2", "sid:%v tid:%v wsURL:%q, websocket code:%v",
+			msg.SessionID, tid, c.wsURL, code)
+		_ = c.close(code)
+		return &websocket.CloseError{Code: code}
+	case <-c.done:
+		c.logger.Debugf("Connection:send:<-c.done #2", "sid:%v tid:%v wsURL:%q", msg.SessionID, tid, c.wsURL)
+	case <-ctx.Done():
+		c.logger.Debugf("Connection:send:<-ctx.Done()", "sid:%v tid:%v wsURL:%q err:%v",
+			msg.SessionID, tid, c.wsURL, ContextErr(ctx))
+		return ContextErr(ctx)
+	case <-c.ctx.Done():
+		c.logger.Debugf("Connection:send:<-c.ctx.Done()", "sid:%v tid:%v wsURL:%q err:%v",
+			msg.SessionID, tid, c.wsURL, ContextErr(c.ctx))
+		return ContextErr(c.ctx)
+	}
+	return nil
+}
+
+func (c *Connection) sendLoop() {
+	c.logger.Debugf("Connection:sendLoop", "wsURL:%q, starts", c.wsURL)
+	for {
+		select {
+		case msg := <-c.sendCh:
+			writer, err := c.conn.NextWriter(websocket.TextMessage)
+			if err != nil {
+				c.handleIOError(err)
+				return
+			}
+			err = jsonv2.MarshalWrite(writer, msg, defaultJSONV2Options)
+			if err != nil {
+				c.handleIOError(err)
+				return
+			}
+			if err := writer.Close(); err != nil {
+				c.handleIOError(err)
+				return
+			}
+		case code := <-c.closeCh:
+			c.logger.Debugf("Connection:sendLoop:<-c.closeCh", "wsURL:%q code:%d", c.wsURL, code)
+			_ = c.close(code)
+			return
+		case <-c.done:
+			c.logger.Debugf("Connection:sendLoop:<-c.done#2", "wsURL:%q", c.wsURL)
+			return
+		case <-c.ctx.Done():
+			c.logger.Debugf("connection:sendLoop", "returning, ctx.Err: %q", ContextErr(c.ctx))
+			return
+		}
+	}
+}
+
+// Close cleanly closes the WebSocket connection.
+// It returns an error if sending the Close control frame fails.
+//
+// Optional code to override default websocket.CloseGoingAway (1001).
+func (c *Connection) Close() {
+	code := websocket.CloseNormalClosure
+	c.logger.Debugf("connection:Close", "wsURL:%q code:%d", c.wsURL, code)
+	_ = c.close(code)
+}
+
+// Execute implements cdproto.Executor and performs a synchronous send and receive.
+func (c *Connection) Execute(
+	ctx context.Context, method string, params, res any,
+) error {
+	c.logger.Debugf("connection:Execute", "wsURL:%q method:%q", c.wsURL, method)
+	id := c.msgIDGen.newID()
+
+	// Setup event handler used to block for response to message being sent.
+	ch := make(chan *cdproto.Message, 1)
+	evCancelCtx, evCancelFn := context.WithCancel(ctx)
+	chEvHandler := make(chan Event)
+	go func() {
+		for {
+			select {
+			case <-evCancelCtx.Done():
+				c.logger.Debugf("connection:Execute:<-evCancelCtx.Done()", "wsURL:%q err:%v", c.wsURL, ContextErr(evCancelCtx))
+				return
+			case ev := <-chEvHandler:
+				msg, ok := ev.data.(*cdproto.Message)
+				if ok && msg.ID == id {
+					select {
+					case <-evCancelCtx.Done():
+						c.logger.Debugf("connection:Execute:<-evCancelCtx.Done()#2",
+							"wsURL:%q err:%v", c.wsURL, ContextErr(evCancelCtx))
+					case ch <- msg:
+						// Stopping goroutine as we expect only one response with the matching message ID
+						return
+					}
+				}
+			}
+		}
+	}()
+	c.onAll(evCancelCtx, chEvHandler)
+	defer evCancelFn() // Remove event handler
+
+	// Send the message
+	var buf []byte
+	if params != nil {
+		var err error
+		buf, err = jsonv2.Marshal(params, defaultJSONV2Options)
+		if err != nil {
+			return err
+		}
+	}
+	msg := &cdproto.Message{
+		ID:     id,
+		Method: cdproto.MethodType(method),
+		Params: buf,
+	}
+
+	return c.send(evCancelCtx, msg, ch, res)
+}
+
+// IgnoreIOErrors signals that the connection will soon be closed, so that any
+// received IO errors can be disregarded.
+func (c *Connection) IgnoreIOErrors() {
+	close(c.closing)
+}
+
+func (c *Connection) isClosing() (s bool) {
+	select {
+	case <-c.closing:
+		s = true
+	default:
+	}
+	return s
+}

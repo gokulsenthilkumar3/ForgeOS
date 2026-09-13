@@ -1,0 +1,440 @@
+// Package expv2 contains a Cloud output using a Protobuf
+// binary format for encoding payloads.
+package expv2
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"net/http"
+	"strconv"
+	"sync"
+	"time"
+
+	"go.k6.io/k6/v2/cloudapi"
+	"go.k6.io/k6/v2/errext"
+	"go.k6.io/k6/v2/errext/exitcodes"
+	"go.k6.io/k6/v2/internal/build"
+	"go.k6.io/k6/v2/internal/cloudapi/insights"
+	insightsOutput "go.k6.io/k6/v2/internal/output/cloud/insights"
+	"go.k6.io/k6/v2/metrics"
+	"go.k6.io/k6/v2/output"
+
+	"github.com/sirupsen/logrus"
+)
+
+// stopFlushTimeout bounds how long shutdown waits on in-flight uploads before
+// canceling them, so a stalled upload can't keep the process from exiting.
+const stopFlushTimeout = 15 * time.Second
+
+// flusher is an interface for flushing data to the cloud.
+type flusher interface {
+	flush(ctx context.Context) error
+}
+
+// Output sends result data to the k6 Cloud service.
+type Output struct {
+	output.SampleBuffer
+
+	logger      logrus.FieldLogger
+	config      cloudapi.Config
+	cloudClient *cloudapi.Client
+	testRunID   string
+
+	collector *collector
+	flushing  flusher
+
+	insightsClient            insightsOutput.Client
+	requestMetadatasCollector insightsOutput.RequestMetadatasCollector
+	requestMetadatasFlusher   insightsOutput.RequestMetadatasFlusher
+
+	metricsHTTPClient metricsHTTPClient // optional override
+	metricsURL        string            // optional override
+
+	// wg tracks background goroutines
+	wg sync.WaitGroup
+
+	// stop signal to graceful stop
+	stop chan struct{}
+
+	// abort signal to interrupt immediately all background goroutines
+	abort        chan struct{}
+	abortOnce    sync.Once
+	testStopFunc func(error)
+
+	// cancelFlush interrupts in-flight uploads when shutdown can no longer wait.
+	cancelFlush context.CancelFunc
+}
+
+// New creates a new cloud output.
+func New(logger logrus.FieldLogger, conf cloudapi.Config, _ *cloudapi.Client) (*Output, error) {
+	// TODO: move this creation operation to the centralized output. Reducing the probability to
+	// break the logic for the config overwriting.
+	//
+	// It creates a new client because in the case the backend has overwritten
+	// the config we need to use the new set.
+	return &Output{
+		config: conf,
+		logger: logger.WithField("output", "cloudv2"),
+		abort:  make(chan struct{}),
+		stop:   make(chan struct{}),
+		cloudClient: cloudapi.NewClient(
+			logger, conf.Token.String, conf.Host.String, build.Version, conf.Timeout.TimeDuration()),
+	}, nil
+}
+
+// SetTestRunID sets the Cloud's test run id.
+func (o *Output) SetTestRunID(id string) {
+	o.testRunID = id
+}
+
+// SetMetricsHTTPClient injects a metricsHTTPClient for metric pushes.
+// Used by the provisioning-mode flow to provide a Bearer-authenticated
+// HTTP layer.
+func (o *Output) SetMetricsHTTPClient(c metricsHTTPClient) {
+	o.metricsHTTPClient = c
+}
+
+// SetMetricsURL injects an explicit metrics push URL. Used by the
+// provisioning-mode flow where the URL comes from the API.
+func (o *Output) SetMetricsURL(url string) {
+	o.metricsURL = url
+}
+
+// SetTestRunStopCallback receives the function that
+// that stops the engine when it is called.
+// It should be called on critical errors.
+func (o *Output) SetTestRunStopCallback(stopFunc func(error)) {
+	o.testStopFunc = stopFunc
+}
+
+// Start starts the goroutine that would listen
+// for metric samples and send them to the cloud.
+func (o *Output) Start() error {
+	o.logger.Debug("Starting...")
+	defer o.logger.Debug("Started!")
+
+	var err error
+	o.collector, err = newCollector(
+		o.config.AggregationPeriod.TimeDuration(),
+		o.config.AggregationWaitPeriod.TimeDuration())
+	if err != nil {
+		return fmt.Errorf("failed to initialize the samples collector: %w", err)
+	}
+
+	// The metrics client always pushes to an explicit URL. In provisioning
+	// mode both the HTTP client and URL are injected via the setters;
+	// otherwise we derive the legacy /v2/metrics/<testRunID> URL from the
+	// cloud client. The two must be set together — one without the other is
+	// a misconfiguration rather than a silent fallback.
+	switch {
+	case o.metricsHTTPClient != nil && o.metricsURL != "":
+		// Both injected (provisioning mode); use as-is.
+	case o.metricsHTTPClient == nil && o.metricsURL == "":
+		o.metricsURL, err = deriveMetricsURL(o.cloudClient.BaseURL(), o.testRunID)
+		if err != nil {
+			return fmt.Errorf("failed to derive the metrics push URL: %w", err)
+		}
+		o.metricsHTTPClient = o.cloudClient
+	default:
+		return errors.New("metrics push client misconfigured: " +
+			"metricsHTTPClient and metricsURL must be set together")
+	}
+
+	mc, err := newMetricsClientWithURL(o.metricsHTTPClient, o.metricsURL)
+	if err != nil {
+		return fmt.Errorf("failed to initialize the http metrics flush client: %w", err)
+	}
+	o.flushing = &metricsFlusher{
+		testRunID:                  o.testRunID,
+		bq:                         &o.collector.bq,
+		client:                     mc,
+		logger:                     o.logger,
+		discardedLabels:            make(map[string]struct{}),
+		aggregationPeriodInSeconds: uint32(o.config.AggregationPeriod.TimeDuration().Seconds()),
+		maxSeriesInBatch:           int(o.config.MaxTimeSeriesInBatch.Int64),
+		// TODO: when the migration from v1 is over
+		// change the default of cloudapi.MetricPushConcurrency to use GOMAXPROCS(0)
+		batchPushConcurrency: int(o.config.MetricPushConcurrency.Int64),
+	}
+
+	flushCtx, cancelFlush := context.WithCancel(context.Background())
+	o.cancelFlush = cancelFlush
+
+	o.runPeriodicFlush(flushCtx)
+	o.periodicInvoke(o.config.AggregationPeriod.TimeDuration(), o.collectSamples)
+
+	if insightsOutput.Enabled(o.config) {
+		testRunID, err := strconv.ParseInt(o.testRunID, 10, 64)
+		if err != nil {
+			return err
+		}
+		o.requestMetadatasCollector = insightsOutput.NewCollector(testRunID)
+
+		insightsClientConfig := insights.NewDefaultClientConfigForTestRun(
+			o.config.TracesHost.String,
+			o.config.Token.String,
+			testRunID,
+		)
+		insightsClient := insights.NewClient(insightsClientConfig)
+
+		if err := insightsClient.Dial(context.Background()); err != nil {
+			return err
+		}
+
+		o.insightsClient = insightsClient
+		o.requestMetadatasFlusher = insightsOutput.NewFlusher(insightsClient, o.requestMetadatasCollector)
+		o.runFlushRequestMetadatas(flushCtx)
+	}
+
+	o.logger.WithField("config", printableConfig(o.config)).Debug("Started!")
+
+	return nil
+}
+
+// StopWithTestError gracefully stops all metric emission from the output.
+func (o *Output) StopWithTestError(_ error) error {
+	o.logger.Debug("Stopping...")
+	defer o.logger.Debug("Stopped!")
+
+	defer o.cancelFlush()
+
+	close(o.stop)
+
+	// Wait for the background flushers, but don't let a stuck upload pin the
+	// process: once the budget is spent, cancel any in-flight push so wg.Wait
+	// returns, and skip the final flush since the connection is unhealthy.
+	flushersDone := make(chan struct{})
+	go func() {
+		o.wg.Wait()
+		close(flushersDone)
+	}()
+	select {
+	case <-flushersDone:
+	case <-time.After(stopFlushTimeout):
+		o.cancelFlush()
+		<-flushersDone
+		return nil
+	}
+
+	select {
+	case <-o.abort:
+		return nil
+	default:
+	}
+
+	// Drain the SampleBuffer and force the aggregation for flushing
+	// all the queued samples even if they haven't yet passed the
+	// wait period.
+	o.collector.DropExpiringDelay()
+	o.collectSamples()
+
+	stopCtx, cancel := context.WithTimeout(context.Background(), stopFlushTimeout)
+	defer cancel()
+	o.flushMetrics(stopCtx)
+
+	// Flush all the remaining request metadatas.
+	if insightsOutput.Enabled(o.config) {
+		o.flushRequestMetadatas(stopCtx)
+		if err := o.insightsClient.Close(); err != nil {
+			o.logger.WithError(err).Error("Failed to close the insights client")
+		}
+	}
+
+	return nil
+}
+
+func (o *Output) runPeriodicFlush(ctx context.Context) {
+	t := time.NewTicker(o.config.MetricPushInterval.TimeDuration())
+
+	o.wg.Add(1)
+
+	go func() {
+		defer func() {
+			t.Stop()
+			o.wg.Done()
+		}()
+
+		for {
+			select {
+			case <-t.C:
+				o.flushMetrics(ctx)
+			case <-o.stop:
+				return
+			case <-o.abort:
+				return
+			}
+		}
+	}()
+}
+
+// AddMetricSamples receives the samples streaming.
+func (o *Output) AddMetricSamples(s []metrics.SampleContainer) {
+	// TODO: this and the next operation are two locking operations,
+	// evaluate to do something smarter, maybe having a lock-free
+	// queue.
+	select {
+	case <-o.abort:
+		return
+	default:
+	}
+
+	// TODO: when we will have a very good optimized
+	// bucketing process we may evaluate to drop this
+	// buffer.
+	//
+	// If the bucketing process is efficient, the single
+	// operation could be a bit longer than just enqueuing
+	// but it could be fast enough to justify to direct
+	// run it and save some memory across the e2e operation.
+	//
+	// It requires very specific benchmark.
+	o.SampleBuffer.AddMetricSamples(s)
+}
+
+func (o *Output) periodicInvoke(d time.Duration, callback func()) {
+	o.wg.Go(func() {
+		t := time.NewTicker(d)
+		defer t.Stop()
+		for {
+			select {
+			case <-t.C:
+				callback()
+			case <-o.stop:
+				return
+			case <-o.abort:
+				return
+			}
+		}
+	})
+}
+
+func (o *Output) collectSamples() {
+	samples := o.GetBufferedSamples()
+	o.collector.CollectSamples(samples)
+
+	if insightsOutput.Enabled(o.config) {
+		o.requestMetadatasCollector.CollectRequestMetadatas(samples)
+	}
+}
+
+// flushMetrics receives a set of metric samples.
+func (o *Output) flushMetrics(ctx context.Context) {
+	start := time.Now()
+
+	err := o.flushing.flush(ctx)
+	if err != nil {
+		o.handleFlushError(err)
+		return
+	}
+
+	o.logger.WithField("t", time.Since(start)).Trace("Successfully flushed buffered samples to the cloud")
+}
+
+func (o *Output) runFlushRequestMetadatas(ctx context.Context) {
+	t := time.NewTicker(o.config.TracesPushInterval.TimeDuration())
+
+	for i := int64(0); i < o.config.TracesPushConcurrency.Int64; i++ {
+		o.wg.Go(func() {
+			defer t.Stop()
+
+			for {
+				select {
+				case <-t.C:
+					o.flushRequestMetadatas(ctx)
+				case <-o.stop:
+					return
+				case <-o.abort:
+					return
+				}
+			}
+		})
+	}
+}
+
+// flushRequestMetadatas periodically flushes traces collected in RequestMetadatasCollector using flusher.
+func (o *Output) flushRequestMetadatas(ctx context.Context) {
+	start := time.Now()
+
+	err := o.requestMetadatasFlusher.Flush(ctx)
+	if err != nil {
+		o.logger.WithError(err).WithField("t", time.Since(start)).Error("Failed to push trace samples to the cloud")
+
+		return
+	}
+
+	o.logger.WithField("t", time.Since(start)).Trace("Successfully flushed buffered trace samples to the cloud")
+}
+
+// handleFlushError handles errors generated from the flushing operation.
+// It may interrupt the metric collection or invoke aborting of the test.
+//
+// note: The actual test execution should continue, since for local k6 run tests
+// the end-of-test summary (or any other outputs) will still work,
+// but the cloud output doesn't send any more metrics.
+// Instead, if cloudapi.Config.StopOnError is enabled the cloud output should
+// stop the whole test run too. This logic should be handled by the caller.
+func (o *Output) handleFlushError(err error) {
+	// Don't actually handle any errors if we were aborted
+	select {
+	case <-o.abort:
+		return
+	default:
+	}
+
+	o.logger.WithError(err).Error("Failed to push metrics to the cloud")
+
+	var errResp cloudapi.ResponseError
+	if !errors.As(err, &errResp) || errResp.Response == nil {
+		return
+	}
+	// The Cloud service returns the error code 4 when it doesn't accept any more metrics.
+	// So, when k6 sees that, the cloud output just stops prematurely.
+	if errResp.Response.StatusCode != http.StatusForbidden || errResp.Code != 4 {
+		return
+	}
+
+	// Do not close multiple times (that would panic) in the case
+	// we hit this multiple times and/or concurrently
+	o.abortOnce.Do(func() {
+		o.logger.WithError(err).Warn("Interrupt sending metrics to cloud due to an error")
+
+		close(o.abort)
+
+		if o.config.StopOnError.Bool {
+			serr := errext.WithAbortReasonIfNone(
+				errext.WithExitCodeIfNone(err, exitcodes.ExternalAbort),
+				errext.AbortedByOutput,
+			)
+
+			if o.testStopFunc != nil {
+				o.testStopFunc(serr)
+			}
+		}
+	})
+}
+
+func printableConfig(c cloudapi.Config) map[string]any {
+	m := map[string]any{
+		"host":                  c.Host.String,
+		"name":                  c.Name.String,
+		"timeout":               c.Timeout.String(),
+		"webAppURL":             c.WebAppURL.String,
+		"projectID":             c.ProjectID.Int64,
+		"pushRefID":             c.PushRefID.String,
+		"stopOnError":           c.StopOnError.Bool,
+		"testRunDetails":        c.TestRunDetails.String,
+		"aggregationPeriod":     c.AggregationPeriod.String(),
+		"aggregationWaitPeriod": c.AggregationWaitPeriod.String(),
+		"maxTimeSeriesInBatch":  c.MaxTimeSeriesInBatch.Int64,
+		"metricPushConcurrency": c.MetricPushConcurrency.Int64,
+		"metricPushInterval":    c.MetricPushInterval.String(),
+		"token":                 "",
+	}
+
+	if c.Token.Valid {
+		m["token"] = "***"
+	}
+
+	return m
+}

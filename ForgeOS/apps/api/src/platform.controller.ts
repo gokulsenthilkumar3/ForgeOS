@@ -1,0 +1,6 @@
+import { Body, Controller, Get, Param, Post } from '@nestjs/common'; import { IsArray, IsBoolean, IsIn, IsString } from 'class-validator'; import { modules, type ModuleId } from '@forgeos/contracts'; import { PlatformService } from './platform.service';
+class ProjectInput { @IsString() name!: string; @IsArray() @IsIn(modules.map(m => m.id), { each: true }) moduleIds!: ModuleId[]; }
+class RunInput { @IsString() projectId!: string; @IsIn(modules.map(m => m.id)) moduleId!: ModuleId; }
+class CompleteInput { @IsBoolean() passed!: boolean; }
+@Controller()
+export class PlatformController { constructor(private readonly platform: PlatformService) {} @Get('health') health() { return { status: 'ok', mode: process.env.FORGEOS_MODE ?? 'self-hosted' }; } @Get('overview') overview() { return this.platform.overview(); } @Get('modules') listModules() { return modules; } @Get('projects') projects() { return this.platform.listProjects(); } @Post('projects') project(@Body() input: ProjectInput) { return this.platform.createProject(input.name, input.moduleIds); } @Post('runs') run(@Body() input: RunInput) { return this.platform.startRun(input.projectId, input.moduleId); } @Post('runs/:id/complete') complete(@Param('id') id: string, @Body() input: CompleteInput) { return this.platform.completeRun(id, input.passed); } }

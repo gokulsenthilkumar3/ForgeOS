@@ -1,0 +1,26 @@
+{
+  "name": "stackforge",
+  "version": "0.1.0",
+  "description": "Scaffold production-ready monorepos in one command",
+  "bin": {
+    "stackforge": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "ts-node src/index.ts",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "commander": "^12.0.0",
+    "inquirer": "^9.0.0",
+    "fs-extra": "^11.0.0",
+    "handlebars": "^4.7.8"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "ts-node": "^10.9.0",
+    "@types/node": "^20.0.0",
+    "@types/fs-extra": "^11.0.0",
+    "@types/inquirer": "^9.0.0"
+  }
+}

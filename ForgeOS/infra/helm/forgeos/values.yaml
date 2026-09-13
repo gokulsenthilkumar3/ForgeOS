@@ -1,0 +1,16 @@
+image:
+  repository: ghcr.io/your-org/forgeos
+  tag: latest
+config:
+  mode: self-hosted
+  apiUrl: https://forgeos.example.com/v1
+postgres:
+  existingSecret: forgeos-postgres
+redis:
+  existingSecret: forgeos-redis
+storage:
+  endpoint: https://s3.example.com
+  bucket: forgeos
+ingress:
+  enabled: true
+  host: forgeos.example.com

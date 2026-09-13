@@ -1,0 +1,9 @@
+{
+  "name": "@dbpulse/connector-postgres",
+  "version": "0.0.1",
+  "main": "index.ts",
+  "dependencies": {
+    "pg": "^8.11.0",
+    "@dbpulse/shared": "workspace:*"
+  }
+}

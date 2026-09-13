@@ -1,0 +1,340 @@
+package cloudapi
+
+import (
+	"bytes"
+	"encoding/json"
+	"time"
+
+	"github.com/mstoykov/envconfig"
+	"gopkg.in/guregu/null.v3"
+
+	"go.k6.io/k6/v2/lib/types"
+)
+
+// Config holds all the necessary data and options for sending metrics to the k6 Cloud.
+//
+//nolint:lll
+type Config struct {
+	// TODO: refactor common stuff between cloud execution and output
+	StackID          null.Int    `json:"stackID" envconfig:"K6_CLOUD_STACK_ID"`
+	StackURL         null.String `json:"stackURL" envconfig:"K6_CLOUD_STACK_URL"`
+	DefaultProjectID null.Int    `json:"defaultProjectID"`
+	Token            null.String `json:"token" envconfig:"K6_CLOUD_TOKEN"`
+	ProjectID        null.Int    `json:"projectID" envconfig:"K6_CLOUD_PROJECT_ID"`
+	Name             null.String `json:"name" envconfig:"K6_CLOUD_NAME"`
+
+	Host    null.String        `json:"host" envconfig:"K6_CLOUD_HOST"`
+	Hostv6  null.String        `json:"hostv6" envconfig:"K6_CLOUD_HOST_V6"` // For test purposes only
+	Timeout types.NullDuration `json:"timeout" envconfig:"K6_CLOUD_TIMEOUT"`
+
+	LogsTailURL    null.String `json:"-" envconfig:"K6_CLOUD_LOGS_TAIL_URL"`
+	WebAppURL      null.String `json:"webAppURL" envconfig:"K6_CLOUD_WEB_APP_URL"`
+	TestRunDetails null.String `json:"testRunDetails" envconfig:"K6_CLOUD_TEST_RUN_DETAILS"`
+	NoCompress     null.Bool   `json:"noCompress" envconfig:"K6_CLOUD_NO_COMPRESS"`
+	StopOnError    null.Bool   `json:"stopOnError" envconfig:"K6_CLOUD_STOP_ON_ERROR"`
+	APIVersion     null.Int    `json:"apiVersion" envconfig:"K6_CLOUD_API_VERSION"`
+
+	// MetricsPushURL is the URL to push metrics to. It is set only
+	// programmatically: from the provisioning API's start_local_execution
+	// response in the self-provision flow, or from K6_CLOUD_METRICS_PUSH_URL
+	// read explicitly by the cmd layer (internal/cmd/outputs_cloud.go) in the
+	// externally-provisioned flow. It is deliberately NOT env-bound (no
+	// envconfig tag): binding it would let a stray K6_CLOUD_METRICS_PUSH_URL
+	// in the environment override the value obtained from provisioning and
+	// corrupt the self-provisioned push. When set, the cloud Output pushes
+	// here instead of deriving a URL from Host.
+	MetricsPushURL null.String `json:"metricsPushURL"`
+
+	// TestRunToken is the scoped test-run token used as the Bearer token for
+	// metrics push (and notify, in the self-provision flow). Like
+	// MetricsPushURL it is set only programmatically — from the provisioning
+	// response, or from K6_CLOUD_TEST_RUN_TOKEN read explicitly by the cmd
+	// layer for an externally-provisioned run — and is deliberately NOT
+	// env-bound, so a stray env var cannot hijack the self-provisioned push.
+	TestRunToken null.String `json:"testRunToken"`
+
+	// PushRefID is the identifier used by k6 Cloud to correlate all the things that
+	// belong to the same test run/execution. Currently, it is equivalent to the test run id.
+	// But, in the future, or in future solutions (e.g. Synthetic Monitoring), there might be
+	// no test run id, and we may still need an identifier to correlate all the things.
+	PushRefID null.String `json:"pushRefID" envconfig:"K6_CLOUD_PUSH_REF_ID"`
+
+	// Log-push configuration for `k6 cloud run --local-execution`. Like the
+	// scoped push creds above, these are programmatic-only (no envconfig tag):
+	// the self-provisioned flow sets them from the provisioning API's
+	// runtime_config.logs, while the externally-provisioned flow reads the
+	// K6_CLOUD_LOGS_* env vars explicitly in cmd (applyExternalLogsConfig), so
+	// a stray env value can't override the run-scoped values. Consumed by cmd
+	// to configure the cloud log pusher; never serialised.
+	LogsPushURL        null.String        `json:"-"`
+	LogsLevel          null.String        `json:"-"`
+	LogsLimit          null.Int           `json:"-"`
+	LogsPushPeriod     types.NullDuration `json:"-"`
+	LogsMessageMaxSize null.Int           `json:"-"`
+	LogsAllowedLabels  []string           `json:"-"`
+
+	// Defines the max allowed number of time series in a single batch.
+	MaxTimeSeriesInBatch null.Int `json:"maxTimeSeriesInBatch" envconfig:"K6_CLOUD_MAX_TIME_SERIES_IN_BATCH"`
+
+	// The time interval between periodic API calls for sending samples to the cloud ingest service.
+	MetricPushInterval types.NullDuration `json:"metricPushInterval" envconfig:"K6_CLOUD_METRIC_PUSH_INTERVAL"`
+
+	// This is how many concurrent pushes will be done at the same time to the cloud
+	MetricPushConcurrency null.Int `json:"metricPushConcurrency" envconfig:"K6_CLOUD_METRIC_PUSH_CONCURRENCY"`
+
+	// If specified and is greater than 0, sample aggregation with that period is enabled
+	AggregationPeriod types.NullDuration `json:"aggregationPeriod" envconfig:"K6_CLOUD_AGGREGATION_PERIOD"`
+
+	// If aggregation is enabled, this specifies how long we'll wait for period samples to accumulate before trying to aggregate them.
+	AggregationWaitPeriod types.NullDuration `json:"aggregationWaitPeriod" envconfig:"K6_CLOUD_AGGREGATION_WAIT_PERIOD"`
+
+	// Indicates whether to send traces to the k6 Insights backend service.
+	TracesEnabled null.Bool `json:"tracesEnabled" envconfig:"K6_CLOUD_TRACES_ENABLED"`
+
+	// The host of the k6 Insights backend service.
+	TracesHost null.String `json:"traceHost" envconfig:"K6_CLOUD_TRACES_HOST"`
+
+	// This is how many concurrent pushes will be done at the same time to the cloud
+	TracesPushConcurrency null.Int `json:"tracesPushConcurrency" envconfig:"K6_CLOUD_TRACES_PUSH_CONCURRENCY"`
+
+	// The time interval between periodic API calls for sending samples to the cloud ingest service.
+	TracesPushInterval types.NullDuration `json:"tracesPushInterval" envconfig:"K6_CLOUD_TRACES_PUSH_INTERVAL"`
+}
+
+// NewConfig creates a new Config instance with default values for some fields.
+func NewConfig() Config {
+	return Config{
+		APIVersion:            null.NewInt(2, false),
+		Host:                  null.NewString("https://ingest.k6.io", false),
+		Hostv6:                null.NewString("https://api.k6.io", false),
+		LogsTailURL:           null.NewString("wss://cloudlogs.k6.io/api/v1/tail", false),
+		WebAppURL:             null.NewString("https://app.k6.io", false),
+		MetricPushInterval:    types.NewNullDuration(1*time.Second, false),
+		MetricPushConcurrency: null.NewInt(1, false),
+		Timeout:               types.NewNullDuration(1*time.Minute, false),
+
+		// The set value (1000) is selected for performance reasons.
+		// Any change to this value should be first discussed with internal stakeholders.
+		MaxTimeSeriesInBatch: null.NewInt(1000, false),
+
+		// TODO: the following values were used by the previous default version (v1).
+		// We decided to keep the same values mostly for having a smoother migration to v2.
+		// Because the previous version's aggregation config, a few lines below, is overwritten
+		// by the remote service with the same values that we are now setting here for v2.
+		// When the migration will be completed we may evaluate to re-discuss them
+		// as we may evaluate to reduce these values - especially the waiting period.
+		// A more specific request about waiting period is mentioned in the link below:
+		// https://github.com/grafana/k6/blob/44e1e63aadb66784ff0a12b8d9821a0fdc9e7467/output/cloud/expv2/collect.go#L72-L77
+		AggregationPeriod:     types.NewNullDuration(3*time.Second, false),
+		AggregationWaitPeriod: types.NewNullDuration(8*time.Second, false),
+
+		TracesEnabled:         null.NewBool(true, false),
+		TracesHost:            null.NewString("grpc-k6-api-prod-prod-us-east-0.grafana.net:443", false),
+		TracesPushInterval:    types.NewNullDuration(1*time.Second, false),
+		TracesPushConcurrency: null.NewInt(1, false),
+	}
+}
+
+// Apply saves config non-zero config values from the passed config in the receiver.
+//
+//nolint:cyclop,funlen,gocognit
+func (c Config) Apply(cfg Config) Config {
+	if cfg.StackID.Valid {
+		c.StackID = cfg.StackID
+	}
+	if cfg.StackURL.Valid && !c.StackURL.Valid {
+		c.StackURL = cfg.StackURL
+	}
+	if cfg.DefaultProjectID.Valid {
+		c.DefaultProjectID = cfg.DefaultProjectID
+	}
+	if cfg.Token.Valid {
+		c.Token = cfg.Token
+	}
+	if cfg.ProjectID.Valid && cfg.ProjectID.Int64 > 0 {
+		c.ProjectID = cfg.ProjectID
+	}
+	if cfg.Name.Valid && cfg.Name.String != "" {
+		c.Name = cfg.Name
+	}
+	if cfg.Host.Valid && cfg.Host.String != "" {
+		c.Host = cfg.Host
+	}
+	if cfg.Hostv6.Valid && cfg.Hostv6.String != "" {
+		c.Hostv6 = cfg.Hostv6
+	}
+	if cfg.LogsTailURL.Valid && cfg.LogsTailURL.String != "" {
+		c.LogsTailURL = cfg.LogsTailURL
+	}
+	if cfg.MetricsPushURL.Valid {
+		c.MetricsPushURL = cfg.MetricsPushURL
+	}
+	if cfg.TestRunToken.Valid {
+		c.TestRunToken = cfg.TestRunToken
+	}
+	if cfg.PushRefID.Valid {
+		c.PushRefID = cfg.PushRefID
+	}
+	if cfg.LogsPushURL.Valid {
+		c.LogsPushURL = cfg.LogsPushURL
+	}
+	if cfg.LogsLevel.Valid {
+		c.LogsLevel = cfg.LogsLevel
+	}
+	if cfg.LogsLimit.Valid {
+		c.LogsLimit = cfg.LogsLimit
+	}
+	if cfg.LogsPushPeriod.Valid {
+		c.LogsPushPeriod = cfg.LogsPushPeriod
+	}
+	if cfg.LogsMessageMaxSize.Valid {
+		c.LogsMessageMaxSize = cfg.LogsMessageMaxSize
+	}
+	if len(cfg.LogsAllowedLabels) > 0 {
+		c.LogsAllowedLabels = cfg.LogsAllowedLabels
+	}
+	if cfg.WebAppURL.Valid {
+		c.WebAppURL = cfg.WebAppURL
+	}
+	if cfg.TestRunDetails.Valid {
+		c.TestRunDetails = cfg.TestRunDetails
+	}
+	if cfg.NoCompress.Valid {
+		c.NoCompress = cfg.NoCompress
+	}
+	if cfg.StopOnError.Valid {
+		c.StopOnError = cfg.StopOnError
+	}
+	if cfg.Timeout.Valid {
+		c.Timeout = cfg.Timeout
+	}
+	if cfg.APIVersion.Valid {
+		c.APIVersion = cfg.APIVersion
+	}
+	if cfg.MaxTimeSeriesInBatch.Valid {
+		c.MaxTimeSeriesInBatch = cfg.MaxTimeSeriesInBatch
+	}
+	if cfg.MetricPushInterval.Valid {
+		c.MetricPushInterval = cfg.MetricPushInterval
+	}
+	if cfg.MetricPushConcurrency.Valid {
+		c.MetricPushConcurrency = cfg.MetricPushConcurrency
+	}
+	if cfg.TracesEnabled.Valid {
+		c.TracesEnabled = cfg.TracesEnabled
+	}
+	if cfg.TracesHost.Valid {
+		c.TracesHost = cfg.TracesHost
+	}
+	if cfg.TracesPushInterval.Valid {
+		c.TracesPushInterval = cfg.TracesPushInterval
+	}
+	if cfg.TracesPushConcurrency.Valid {
+		c.TracesPushConcurrency = cfg.TracesPushConcurrency
+	}
+	if cfg.AggregationPeriod.Valid {
+		c.AggregationPeriod = cfg.AggregationPeriod
+	}
+	if cfg.AggregationWaitPeriod.Valid {
+		c.AggregationWaitPeriod = cfg.AggregationWaitPeriod
+	}
+	return c
+}
+
+// GetConsolidatedConfig combines the default config values with the JSON config
+// values and environment variables and returns the final result.
+// it also returns a warning message that could be shown to the user.
+// to bring some attention to the fact that the user.
+func GetConsolidatedConfig(
+	jsonRawConf json.RawMessage,
+	env map[string]string,
+	configArg string,
+	cloudConfig json.RawMessage,
+) (Config, string, error) {
+	warn := ""
+
+	result := NewConfig()
+	if jsonRawConf != nil {
+		jsonConf := Config{}
+		if err := json.Unmarshal(jsonRawConf, &jsonConf); err != nil {
+			return result, warn, err
+		}
+		result = result.Apply(jsonConf)
+	}
+
+	if err := extractFromCloudOption(cloudConfig, &result); err != nil {
+		return result, warn, err
+	}
+
+	envConfig := Config{}
+	if err := envconfig.Process("", &envConfig, func(key string) (string, bool) {
+		v, ok := env[key]
+		return v, ok
+	}); err != nil {
+		// TODO: get rid of envconfig and actually use the env parameter...
+		return result, warn, err
+	}
+	result = result.Apply(envConfig)
+
+	if configArg != "" {
+		result.Name = null.StringFrom(configArg)
+	}
+
+	return result, warn, nil
+}
+
+// extractFromCloudOption merges fields from the JSON in a cloud key of
+// the provided external map. Used for options.cloud settings.
+func extractFromCloudOption(
+	cloudConfig json.RawMessage,
+	conf *Config,
+) error {
+	tmpConfig := Config{}
+	if cloudConfig == nil {
+		return nil
+	}
+	if err := json.Unmarshal(cloudConfig, &tmpConfig); err != nil {
+		return err
+	}
+
+	// Only merge ProjectID, Name, Token, and StackID from options.
+	// StackURL and DefaultProjectID can only be set via login.
+	if tmpConfig.ProjectID.Valid {
+		conf.ProjectID = tmpConfig.ProjectID
+	}
+	if tmpConfig.Name.Valid {
+		conf.Name = tmpConfig.Name
+	}
+	if tmpConfig.Token.Valid {
+		conf.Token = tmpConfig.Token
+	}
+	if tmpConfig.StackID.Valid {
+		conf.StackID = tmpConfig.StackID
+	}
+
+	return nil
+}
+
+// GetTemporaryCloudConfig returns a temporary cloud config.
+// Original comment
+// TODO: Fix this
+// We reuse cloud.Config for parsing options.cloud, but this probably shouldn't be
+// done, as the idea of options.cloud is that they are extensible without touching k6. But in
+// order for this to happen, we shouldn't actually marshal cloud.Config on top of it, because
+// it will be missing some fields that aren't actually mentioned in the struct.
+// So in order for use to copy the fields that we need for k6 cloud's api we unmarshal in
+// map[string]any and copy what we need if it isn't set already
+func GetTemporaryCloudConfig(cloudConfig json.RawMessage) (map[string]any, error) {
+	tmpCloudConfig := make(map[string]any, 3)
+
+	if cloudConfig == nil {
+		return tmpCloudConfig, nil
+	}
+	dec := json.NewDecoder(bytes.NewReader(cloudConfig))
+	dec.UseNumber() // otherwise float64 are used
+	if err := dec.Decode(&tmpCloudConfig); err != nil {
+		return nil, err
+	}
+
+	return tmpCloudConfig, nil
+}

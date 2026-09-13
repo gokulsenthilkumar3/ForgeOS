@@ -1,0 +1,267 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+// ---------------------------------------------------------------------------
+// Core User Model
+// ---------------------------------------------------------------------------
+
+model User {
+  id                String           @id @default(uuid())
+  email             String           @unique
+  fullName          String
+  role              String           @default("USER")
+  tier              String           @default("FREE")
+
+  // Auth
+  masterPasswordHash String          // bcrypt hash (for server-side auth only; vault encryption uses client-side key)
+  salt              String           // 16-byte hex salt for client-side key derivation
+  totpSecret        String?          // encrypted TOTP secret
+  totpEnabled       Boolean          @default(false)
+  recoveryCodeHash  String?          // bcrypt hash of the 10-char recovery code
+
+  // Profile
+  avatarUrl         String?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  lastLoginAt       DateTime?
+  lastLoginIp       String?
+
+  // Security settings
+  autoLockMinutes   Int              @default(15) // 0 = never
+  clipboardClearSeconds Int          @default(30)
+  themePreference   String           @default("dark") // "dark" | "light" | "system"
+
+  // Relations
+  vaultEntries      VaultEntry[]
+  collections       VaultCollection[]
+  tags              VaultTag[]
+  breachRecords     BreachRecord[]
+  generatorHistory  GeneratorHistory[]
+  securityAuditLogs SecurityAuditLog[]
+  refreshTokens     RefreshToken[]
+  sharedVaults      SharedVaultMember[]
+  sharedVaultOwner  SharedVault[]
+}
+
+// ---------------------------------------------------------------------------
+// Vault Entries — encrypted blobs (server never sees plaintext)
+// ---------------------------------------------------------------------------
+
+model VaultEntry {
+  id                String         @id @default(uuid())
+  userId            String
+  type              String         @default("PASSWORD")
+
+  // Display metadata (unencrypted for search/display)
+  title             String
+  websiteUrl        String?
+  faviconUrl        String?
+  username          String?        // stored plain for display only; password field is encrypted
+  isFavorite        Boolean        @default(false)
+
+  // Encrypted payload (AES-256-GCM)
+  encryptedData     String         // base64-encoded ciphertext (password, notes, custom fields, card data, etc.)
+  iv                String         // base64-encoded 12-byte IV
+
+  // Security metadata
+  strengthScore     Int?           // 0-100
+  passwordLength    Int?
+  hasUppercase      Boolean?
+  hasLowercase      Boolean?
+  hasNumbers        Boolean?
+  hasSymbols        Boolean?
+  hasTwoFactor      Boolean        @default(false)
+  twoFactorProvider String?        // "google", "microsoft", "authy", etc.
+
+  // Timestamps
+  lastPasswordChange DateTime?
+  passwordViewedAt  DateTime?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  // Relations
+  user              User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  collections       VaultEntryCollection[]
+  tags              VaultEntryTag[]
+  breachRecords     BreachRecord[]
+
+  @@index([userId])
+  @@index([userId, type])
+  @@index([userId, isFavorite])
+}
+
+// ---------------------------------------------------------------------------
+// Collections (folders/categories)
+// ---------------------------------------------------------------------------
+
+model VaultCollection {
+  id        String   @id @default(uuid())
+  userId    String
+  name      String
+  icon      String   @default("folder") // emoji or lucide icon name
+  color     String   @default("#00A8B5")
+  isDefault Boolean  @default(false)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  user    User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  entries VaultEntryCollection[]
+
+  @@unique([userId, name])
+}
+
+model VaultEntryCollection {
+  entryId      String
+  collectionId String
+
+  entry      VaultEntry      @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  collection VaultCollection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+
+  @@id([entryId, collectionId])
+}
+
+// ---------------------------------------------------------------------------
+// Tags
+// ---------------------------------------------------------------------------
+
+model VaultTag {
+  id        String   @id @default(uuid())
+  userId    String
+  name      String
+  color     String   @default("#6B7280")
+  createdAt DateTime @default(now())
+
+  user    User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  entries VaultEntryTag[]
+
+  @@unique([userId, name])
+}
+
+model VaultEntryTag {
+  entryId String
+  tagId   String
+
+  entry VaultEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  tag   VaultTag   @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([entryId, tagId])
+}
+
+// ---------------------------------------------------------------------------
+// Breach Records
+// ---------------------------------------------------------------------------
+
+model BreachRecord {
+  id          String   @id @default(uuid())
+  userId      String
+  entryId     String?
+  email       String?  // email that was breached
+  source      String   // "hibp", "internal", "dark_web"
+  breachName  String?
+  breachDate  DateTime?
+  severity    String   @default("medium") // "low" | "medium" | "high" | "critical"
+  resolved    Boolean  @default(false)
+  resolvedAt  DateTime?
+  snoozedUntil DateTime?
+  createdAt   DateTime @default(now())
+
+  user  User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  entry VaultEntry? @relation(fields: [entryId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([userId, resolved])
+}
+
+// ---------------------------------------------------------------------------
+// Generator History (session-scoped, cleared on logout)
+// ---------------------------------------------------------------------------
+
+model GeneratorHistory {
+  id             String   @id @default(uuid())
+  userId         String
+  type           String   // "password" | "passphrase" | "username" | "pin"
+  encryptedValue String   // encrypted with session key
+  iv             String
+  createdAt      DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// ---------------------------------------------------------------------------
+// Security Audit Logs
+// ---------------------------------------------------------------------------
+
+model SecurityAuditLog {
+  id        String      @id @default(uuid())
+  userId    String
+  action    String
+  entryId   String?     // if action was on a specific vault entry
+  ipAddress String?
+  userAgent String?
+  metadata  String?     // JSON string for extra context
+  timestamp DateTime    @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([userId, timestamp])
+}
+
+// ---------------------------------------------------------------------------
+// Shared Vaults (Vault Pro+)
+// ---------------------------------------------------------------------------
+
+model SharedVault {
+  id        String   @id @default(uuid())
+  ownerId   String
+  name      String
+  icon      String   @default("shield")
+  color     String   @default("#1B3A6B")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  owner   User                @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  members SharedVaultMember[]
+}
+
+model SharedVaultMember {
+  id           String          @id @default(uuid())
+  vaultId      String
+  userId       String
+  role         String          @default("VIEWER")
+  invitedEmail String?         // for pending invitations
+  acceptedAt   DateTime?
+  createdAt    DateTime        @default(now())
+
+  vault SharedVault @relation(fields: [vaultId], references: [id], onDelete: Cascade)
+  user  User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([vaultId, userId])
+}
+
+// ---------------------------------------------------------------------------
+// Refresh Tokens
+// ---------------------------------------------------------------------------
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  userId    String
+  tokenHash String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  revoked   Boolean  @default(false)
+  ipAddress String?
+  userAgent String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}

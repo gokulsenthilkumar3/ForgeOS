@@ -1,0 +1,28 @@
+# VCS
+.git
+.gitignore
+
+# Dependencies (rebuilt in Docker)
+**/node_modules
+**/.pnpm-store
+
+# Build outputs
+**/.next
+**/dist
+**/build
+**/coverage
+
+# Dev / local
+.env
+.env.local
+.env.*.local
+**/*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docs
+docs/
+*.md
+!README.md

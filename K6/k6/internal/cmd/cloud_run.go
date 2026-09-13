@@ -1,0 +1,241 @@
+package cmd
+
+import (
+	"errors"
+	"fmt"
+
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
+
+	"go.k6.io/k6/v2/cmd/state"
+	"go.k6.io/k6/v2/errext"
+	"go.k6.io/k6/v2/errext/exitcodes"
+	"go.k6.io/k6/v2/internal/execution"
+	"go.k6.io/k6/v2/internal/execution/local"
+)
+
+const cloudRunCommandName string = "run"
+
+type cmdCloudRun struct {
+	// localExecution stores the state of the --local-execution flag.
+	localExecution bool
+
+	// linger stores the state of the --linger flag.
+	linger bool
+
+	// noUsageReport stores the state of the --no-usage-report flag.
+	noUsageReport bool
+
+	// noArchiveUpload stores the state of the --no-archive-upload flag.
+	//
+	// This flag indicates to the local execution mode to not send the test
+	// archive to the cloud service.
+	noArchiveUpload bool
+
+	// noCloudSecrets stores the state of the --no-cloud-secrets flag.
+	noCloudSecrets bool
+
+	// noCloudLogs stores the state of the --no-cloud-logs flag.
+	noCloudLogs bool
+
+	// runCmd holds an instance of the k6 run command that we store
+	// in order to be able to call its run method to support
+	// the --local-execution flag mode.
+	runCmd *cmdRun
+
+	// gs holds the global state, used to run the test in the cloud.
+	gs *state.GlobalState
+
+	// showCloudLogs stores the state of the --show-logs flag.
+	showCloudLogs bool
+
+	// exitOnRunning stores the state of the --exit-on-running flag.
+	exitOnRunning bool
+}
+
+func getCmdCloudRun(gs *state.GlobalState) *cobra.Command {
+	// We instantiate the run command here to be able to call its run method
+	// when the --local-execution flag is set.
+	runCmd := &cmdRun{
+		gs: gs,
+
+		// We override the loadConfiguredTest func to use the local execution
+		// configuration which enforces the use of the cloud output among other
+		// side effects.
+		loadConfiguredTest: func(cmd *cobra.Command, args []string) (
+			*loadedAndConfiguredTest,
+			execution.Controller,
+			error,
+		) {
+			test, err := loadAndConfigureLocalTest(gs, cmd, args, getCloudRunLocalExecutionConfig)
+			return test, local.NewController(), err
+		},
+	}
+
+	cloudRunCmd := &cmdCloudRun{
+		gs:            gs,
+		runCmd:        runCmd,
+		showCloudLogs: true,
+	}
+
+	exampleText := getExampleText(gs, `
+  # Run a test script in Grafana Cloud
+  $ {{.}} cloud run script.js
+
+  # Run a test archive in Grafana Cloud
+  $ {{.}} cloud run archive.tar
+
+  # Read a test script or archive from stdin
+  $ {{.}} cloud run - < script.js`[1:])
+
+	thisCmd := &cobra.Command{
+		Use:     cloudRunCommandName,
+		Short:   "Run a test in Grafana Cloud",
+		Long:    "Run a test in Grafana Cloud. Requires authentication via \"k6 cloud login\".",
+		Example: exampleText,
+		Args: exactArgsWithMsg(1,
+			"the k6 cloud run command expects a single argument consisting in either a path to a script or "+
+				"archive file, or the \"-\" symbol indicating the script or archive should be read from stdin",
+		),
+		PreRunE: cloudRunCmd.preRun,
+		RunE:    cloudRunCmd.run,
+	}
+
+	thisCmd.Flags().SortFlags = false
+	thisCmd.Flags().AddFlagSet(cloudRunCmd.flagSet())
+	thisCmd.Flags().AddFlagSet(cloudCmdFlagSet(&cloudRunCmd.showCloudLogs, &cloudRunCmd.exitOnRunning))
+
+	return thisCmd
+}
+
+func (c *cmdCloudRun) preRun(cmd *cobra.Command, _ []string) error {
+	if c.localExecution {
+		if cmd.Flags().Changed("exit-on-running") {
+			return errext.WithExitCodeIfNone(
+				fmt.Errorf("the --local-execution flag is not compatible with the --exit-on-running flag"),
+				exitcodes.InvalidConfig,
+			)
+		}
+
+		if cmd.Flags().Changed("show-logs") {
+			return errext.WithExitCodeIfNone(
+				fmt.Errorf("the --local-execution flag is not compatible with the --show-logs flag"),
+				exitcodes.InvalidConfig,
+			)
+		}
+
+		return nil
+	}
+
+	if c.linger {
+		return errext.WithExitCodeIfNone(
+			fmt.Errorf("the --linger flag can only be used in conjunction with the --local-execution flag"),
+			exitcodes.InvalidConfig,
+		)
+	}
+
+	if c.noCloudSecrets {
+		return errext.WithExitCodeIfNone(
+			fmt.Errorf("the --no-cloud-secrets flag can only be used in conjunction with the --local-execution flag"),
+			exitcodes.InvalidConfig,
+		)
+	}
+
+	if c.noCloudLogs {
+		return errext.WithExitCodeIfNone(
+			fmt.Errorf("the --no-cloud-logs flag can only be used in conjunction with the --local-execution flag"),
+			exitcodes.InvalidConfig,
+		)
+	}
+
+	return applyCloudEnvOverrides(c.gs, cmd, &c.showCloudLogs, &c.exitOnRunning)
+}
+
+func (c *cmdCloudRun) run(cmd *cobra.Command, args []string) error {
+	if c.localExecution {
+		c.runCmd.loadConfiguredTest = func(*cobra.Command, []string) (*loadedAndConfiguredTest, execution.Controller, error) {
+			test, err := loadAndConfigureLocalTest(c.runCmd.gs, cmd, args, getCloudRunLocalExecutionConfig)
+			if err != nil {
+				return nil, nil, fmt.Errorf("could not load and configure the test: %w", err)
+			}
+
+			if err := createCloudTest(c.runCmd.gs, test); err != nil {
+				if errors.Is(err, errCloudAuth) {
+					return nil, nil, err
+				}
+				return nil, nil, fmt.Errorf("could not create the cloud test run: %w", err)
+			}
+
+			return test, local.NewController(), nil
+		}
+		return c.runCmd.run(cmd, args)
+	}
+
+	// When running the `k6 cloud run` command explicitly disable the usage report.
+	c.noUsageReport = true
+
+	return runCloudTest(c.gs, cmd, args, cloudTestRunOptions{
+		showCloudLogs: c.showCloudLogs,
+		exitOnRunning: c.exitOnRunning,
+	})
+}
+
+func (c *cmdCloudRun) flagSet() *pflag.FlagSet {
+	flags := pflag.NewFlagSet("", pflag.ContinueOnError)
+	flags.SortFlags = false
+
+	flags.BoolVar(&c.localExecution, "local-execution", c.localExecution,
+		"executes the test locally instead of in the cloud")
+	flags.BoolVar(
+		&c.linger,
+		"linger",
+		c.linger,
+		"only when using the local-execution mode, keeps the API server alive past the test end",
+	)
+	flags.BoolVar(
+		&c.noUsageReport,
+		"no-usage-report",
+		c.noUsageReport,
+		"only when using the local-execution mode, don't send anonymous usage "+
+			"stats (https://grafana.com/docs/k6/latest/set-up/usage-collection/)",
+	)
+	flags.BoolVar(
+		&c.noArchiveUpload,
+		"no-archive-upload",
+		c.noArchiveUpload,
+		"only when using the local-execution mode, don't upload the test archive to the cloud service",
+	)
+	flags.BoolVar(
+		&c.noCloudSecrets,
+		"no-cloud-secrets",
+		c.noCloudSecrets,
+		"only when using the local-execution mode, don't automatically configure the cloud secret source",
+	)
+	flags.BoolVar(
+		&c.noCloudLogs,
+		"no-cloud-logs",
+		c.noCloudLogs,
+		"only when using the local-execution mode, don't push logs to the cloud",
+	)
+	flags.StringArray("features", nil, "enable feature flags (comma-separated)")
+
+	return flags
+}
+
+func getCloudRunLocalExecutionConfig(flags *pflag.FlagSet) (Config, error) {
+	opts, err := getOptions(flags)
+	if err != nil {
+		return Config{}, err
+	}
+
+	// When running locally, we force the output to be cloud.
+	out := []string{"cloud"}
+
+	return Config{
+		Options:         opts,
+		Out:             out,
+		Linger:          getNullBool(flags, "linger"),
+		NoUsageReport:   getNullBool(flags, "no-usage-report"),
+		NoArchiveUpload: getNullBool(flags, "no-archive-upload"),
+	}, nil
+}

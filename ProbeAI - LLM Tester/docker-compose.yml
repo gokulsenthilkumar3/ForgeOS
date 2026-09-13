@@ -1,0 +1,50 @@
+version: '3.8'
+
+services:
+  api:
+    build: .
+    command: uvicorn api:app --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://user:pass@db:5432/aitester
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      - db
+      - redis
+
+  worker:
+    build: .
+    command: celery -A api.celery_app worker --loglevel=info
+    environment:
+      - DATABASE_URL=postgresql://user:pass@db:5432/aitester
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      - redis
+      - db
+
+  dashboard:
+    build: ./frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+
+  redis:
+    image: redis:alpine
+    ports:
+      - "6379:6379"
+
+  db:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_USER=user
+      - POSTGRES_PASSWORD=pass
+      - POSTGRES_DB=aitester
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
