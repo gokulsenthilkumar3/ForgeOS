@@ -10,7 +10,7 @@ This app is part of the single parent repository at `D:\Projects\ForgeOS`. The s
 2. Start Docker Desktop, then run `docker compose up --build` from this directory.
 3. Open `http://localhost:3000` and sign in with `FORGEOS_ADMIN_PASSWORD`.
 
-The web routes are `/modules/<module-id>`, ForgeOS API routes are `/api/v1/*`, MathShield uses `/api/mathshield/*` and `/shield.js`, and PulseWatch uses `/api/pulsewatch/*`. Only port 3000 is published by Compose.
+The web routes are `/modules/<module-id>`, ForgeOS API routes are `/api/v1/*`, MathShield uses `/api/mathshield/*` and `/shield.js`, and PulseWatch uses `/api/pulsewatch/*`. Compose publishes only one application port. Set `FORGEOS_PUBLIC_PORT` if port 3000 is already in use, then open `http://localhost:<that-port>`.
 
 ## Available workbenches
 

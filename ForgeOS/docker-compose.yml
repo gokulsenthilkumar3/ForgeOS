@@ -7,7 +7,7 @@ services:
       FORGEOS_PULSEWATCH_INTERNAL_URL: http://pulsewatch:4002
       FORGEOS_ADMIN_PASSWORD: ${FORGEOS_ADMIN_PASSWORD:?Set FORGEOS_ADMIN_PASSWORD in .env}
       FORGEOS_SESSION_SECRET: ${FORGEOS_SESSION_SECRET:?Set FORGEOS_SESSION_SECRET in .env}
-    ports: ["3000:3000"]
+    ports: ["${FORGEOS_PUBLIC_PORT:-3000}:3000"]
     depends_on: [api, mathshield, pulsewatch]
   api:
     build: { context: ., dockerfile: apps/api/Dockerfile }
