@@ -4,4 +4,6 @@
 **/.turbo
 **/*.tsbuildinfo
 .env
+**/.env.local
+**/.env.*.local
 .git
