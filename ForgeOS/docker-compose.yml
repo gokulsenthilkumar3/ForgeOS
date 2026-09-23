@@ -1,27 +1,66 @@
 services:
   web:
     build: { context: ., dockerfile: apps/web/Dockerfile }
-    environment: { NEXT_PUBLIC_API_URL: http://localhost:4000/v1 }
+    environment:
+      FORGEOS_API_INTERNAL_URL: http://api:4000
+      FORGEOS_MATHSHIELD_INTERNAL_URL: http://mathshield:4001
+      FORGEOS_PULSEWATCH_INTERNAL_URL: http://pulsewatch:4002
+      FORGEOS_ADMIN_PASSWORD: ${FORGEOS_ADMIN_PASSWORD:?Set FORGEOS_ADMIN_PASSWORD in .env}
+      FORGEOS_SESSION_SECRET: ${FORGEOS_SESSION_SECRET:?Set FORGEOS_SESSION_SECRET in .env}
     ports: ["3000:3000"]
-    depends_on: [api]
+    depends_on: [api, mathshield, pulsewatch]
   api:
     build: { context: ., dockerfile: apps/api/Dockerfile }
     environment:
       FORGEOS_MODE: self-hosted
       PORT: 4000
-      DATABASE_URL: postgresql://forgeos:forgeos@postgres:5432/forgeos
+      DATABASE_URL: postgresql://forgeos:${FORGEOS_DB_PASSWORD:?Set FORGEOS_DB_PASSWORD in .env}@postgres:5432/forgeos
       REDIS_URL: redis://redis:6379
-    ports: ["4000:4000"]
+    expose: ["4000"]
     depends_on: [postgres, redis]
+  mathshield:
+    build: { context: ../MathShield-CDN, dockerfile: Dockerfile }
+    expose: ["4001"]
+    depends_on: [postgres, redis]
+    volumes:
+      - mathshield-data:/app/data
+    environment:
+      PORT: 4001
+      NODE_ENV: production
+      JWT_SECRET: ${MATHSHIELD_JWT_SECRET:?Set MATHSHIELD_JWT_SECRET in .env}
+      API_KEY_SECRET: ${MATHSHIELD_API_KEY_SECRET:?Set MATHSHIELD_API_KEY_SECRET in .env}
+      DB_NAME: /app/data/mathshield.sqlite
+  pulsewatch:
+    build: { context: ../PulseWatch/PulseWatch/backend, dockerfile: Dockerfile }
+    environment:
+      PORT: 4002
+      PULSEWATCH_DATA_FILE: /app/data/pulsewatch.json
+    expose: ["4002"]
+    volumes:
+      - pulsewatch-data:/app/data
   postgres:
     image: postgres:16-alpine
-    environment: { POSTGRES_USER: forgeos, POSTGRES_PASSWORD: forgeos, POSTGRES_DB: forgeos }
-    ports: ["5432:5432"]
+    environment:
+      POSTGRES_USER: forgeos
+      POSTGRES_PASSWORD: ${FORGEOS_DB_PASSWORD:?Set FORGEOS_DB_PASSWORD in .env}
+      POSTGRES_DB: forgeos
+    expose: ["5432"]
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
   redis:
     image: redis:7-alpine
-    ports: ["6379:6379"]
+    expose: ["6379"]
   minio:
     image: minio/minio
     command: server /data --console-address :9001
-    environment: { MINIO_ROOT_USER: forgeos, MINIO_ROOT_PASSWORD: forgeos-local-password }
-    ports: ["9000:9000", "9001:9001"]
+    environment:
+      MINIO_ROOT_USER: forgeos
+      MINIO_ROOT_PASSWORD: ${FORGEOS_STORAGE_PASSWORD:?Set FORGEOS_STORAGE_PASSWORD in .env}
+    expose: ["9000", "9001"]
+    volumes:
+      - minio-data:/data
+volumes:
+  mathshield-data:
+  pulsewatch-data:
+  postgres-data:
+  minio-data:

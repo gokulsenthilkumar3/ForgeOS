@@ -1,24 +1,23 @@
 # ForgeOS
 
-ForgeOS is the unified engineering operations platform. It consolidates delivery, quality, AI, observability, database governance, asset tools, and secure utilities behind one workspace-aware console.
+ForgeOS brings 14 engineering tools into one browser UI. The public application address is `http://localhost:3000`; API and tool services run privately behind it.
 
-## Quick start
+This app is part of the single parent repository at `D:\Projects\ForgeOS`. The sibling product folders are tracked in that repository and are not separate ForgeOS deployments. The overview's **Customize modules** control saves workspace-level enable/disable choices; disabled modules are hidden from navigation and blocked in the module workbench.
 
-```bash
-pnpm install
-pnpm dev
-```
+## Start locally
 
-The web console runs on port `3000`, the API on `4000`, and the worker starts independently. Copy `.env.example` to `.env` to connect PostgreSQL, Redis, and S3-compatible storage; the console remains usable in demo mode without them.
+1. Copy `.env.example` to `.env` and replace every placeholder password and secret.
+2. Start Docker Desktop, then run `docker compose up --build` from this directory.
+3. Open `http://localhost:3000` and sign in with `FORGEOS_ADMIN_PASSWORD`.
 
-## Product modules
+The web routes are `/modules/<module-id>`, ForgeOS API routes are `/api/v1/*`, MathShield uses `/api/mathshield/*` and `/shield.js`, and PulseWatch uses `/api/pulsewatch/*`. Only port 3000 is published by Compose.
 
-- Delivery: CommitCraft, StackForge, SnapDiff
-- Quality: Comparer, RegexForge, Load Lab (K6)
-- AI: PromptVault, ProbeAI
-- Operations: PulseWatch, DBPulse
-- Assets: GLBViewer, CraftCV, VaultIQ
+## Available workbenches
 
-## Deployment
+CommitCraft drafts conventional commits and can call OpenAI or Anthropic with a key you provide. StackForge downloads project ZIPs. SnapDiff compares two screenshots. Comparer compares text, SQL, and JSON. RegexForge tests JavaScript regular expressions. Load Lab creates K6 scripts. PromptVault saves local prompt versions and runs models. ProbeAI compares responses and runs small model evaluations. PulseWatch monitors endpoints and tracks incidents. DBPulse explores ForgeOS audit events. GLBViewer opens local GLB models. CraftCV edits and prints a CV. VaultIQ encrypts a local vault in your browser. MathShield generates and verifies challenges.
 
-`docker compose up --build` starts the cloud-compatible local stack. Helm values under `infra/helm/forgeos` are for customer-managed Kubernetes deployments.
+These are working entry points, not full parity with every standalone product. The [migration checklist](docs/MODULE-MIGRATION.md) tracks remaining features, including worker execution, database connectors, team access, artifact sharing, and enterprise deployment.
+
+## Development
+
+Install dependencies with `pnpm install`. The ForgeOS API requires PostgreSQL via `DATABASE_URL`; MathShield and PulseWatch run from their source folders. `pnpm build` checks the ForgeOS packages. For local web development, `pnpm --filter @forgeos/web dev -- --port 3002` loads valid credentials from `.env`; when those are still example values, it creates an ignored `apps/web/.env.local` with random credentials. Open that file to find the administrator password, then restart any web server that was already running. Production and Docker deployments must supply their own strong credentials.

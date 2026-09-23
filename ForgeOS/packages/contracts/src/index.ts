@@ -1,9 +1,9 @@
 export type Role = 'owner' | 'admin' | 'member' | 'auditor' | 'service_account';
 export type ModuleId =
   | 'commitcraft' | 'stackforge' | 'snapdiff' | 'comparer' | 'regexforge' | 'loadlab'
-  | 'promptvault' | 'probeai' | 'pulsewatch' | 'dbpulse' | 'glbviewer' | 'craftcv' | 'vaultiq';
+  | 'promptvault' | 'probeai' | 'pulsewatch' | 'dbpulse' | 'glbviewer' | 'craftcv' | 'vaultiq' | 'mathshield';
 
-export interface Workspace { id: string; name: string; slug: string; plan: 'cloud' | 'self-hosted'; createdAt: string }
+export interface Workspace { id: string; name: string; slug: string; plan: 'cloud' | 'self-hosted'; moduleIds: ModuleId[]; createdAt: string }
 export interface Project { id: string; workspaceId: string; name: string; moduleIds: ModuleId[]; createdAt: string }
 export interface Secret { id: string; workspaceId: string; name: string; provider?: string; createdAt: string }
 export interface Artifact { id: string; projectId: string; name: string; mediaType: string; signedUrl?: string; expiresAt?: string }
@@ -29,5 +29,6 @@ export const modules: Array<{ id: ModuleId; name: string; category: string; desc
   { id: 'dbpulse', name: 'DBPulse', category: 'Operations', description: 'Database activity intelligence' },
   { id: 'glbviewer', name: 'GLBViewer', category: 'Assets', description: '3D asset viewing and sharing' },
   { id: 'craftcv', name: 'CraftCV', category: 'Assets', description: 'Private CV authoring and export' },
-  { id: 'vaultiq', name: 'VaultIQ', category: 'Assets', description: 'Zero-knowledge credential vault' }
+  { id: 'vaultiq', name: 'VaultIQ', category: 'Assets', description: 'Zero-knowledge credential vault' },
+  { id: 'mathshield', name: 'MathShield', category: 'Security', description: 'Adaptive human verification and bot protection' }
 ];

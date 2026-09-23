@@ -1,0 +1,13 @@
+{
+  "name": "forgeos-repository",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@9.15.0",
+  "scripts": {
+    "build": "pnpm --dir ForgeOS build",
+    "test": "pnpm --dir ForgeOS test",
+    "typecheck": "pnpm --dir ForgeOS typecheck",
+    "start": "docker compose -f ForgeOS/docker-compose.yml --project-directory ForgeOS up --build",
+    "stop": "docker compose -f ForgeOS/docker-compose.yml --project-directory ForgeOS down"
+  }
+}

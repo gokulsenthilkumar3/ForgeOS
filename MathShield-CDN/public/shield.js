@@ -6,7 +6,7 @@
   'use strict';
 
   const VERSION = '2.0.0';
-  const API_BASE = (window.MathShieldConfig && window.MathShieldConfig.apiBase) || 'http://localhost:3000/api';
+  const API_BASE = (window.MathShieldConfig && window.MathShieldConfig.apiBase) || '/api/mathshield';
 
   /* ─────────────────────────── CSS ─────────────────────────── */
   const CSS = `

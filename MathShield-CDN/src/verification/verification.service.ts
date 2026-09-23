@@ -123,7 +123,7 @@ export class VerificationService {
 
     // Generate JWT token for successful verifications
     let token: VerificationToken | undefined;
-    if (confidence > 50) {
+    if (isCorrect && confidence > 50) {
       token = await this.tokenService.generateVerificationToken(
         challenge.id,
         challenge.type,
@@ -135,7 +135,7 @@ export class VerificationService {
     }
 
     return {
-      success: confidence > 50, // Threshold for passing
+      success: isCorrect && confidence > 50,
       confidence: Math.round(confidence),
       intelligenceScore: Math.round(intelligenceScore),
       riskLevel,

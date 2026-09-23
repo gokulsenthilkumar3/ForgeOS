@@ -1,27 +1,114 @@
 'use client';
-import { useMemo, useState } from 'react';
-import { modules, type ModuleId } from '@forgeos/contracts';
 
-const activity = [
-  ['SnapDiff', 'Baseline approved for checkout flow', '2 min ago'], ['PulseWatch', 'api.production.example recovered', '12 min ago'],
-  ['ProbeAI', 'Regression suite passed: 96.4%', '32 min ago'], ['DBPulse', 'Schema migration detected in billing', '1 hr ago']
-];
-const statuses: Record<ModuleId, string> = { commitcraft: 'Ready', stackforge: 'Ready', snapdiff: '1 review', comparer: 'Ready', regexforge: 'Ready', loadlab: 'Ready', promptvault: '3 drafts', probeai: '1 run', pulsewatch: 'Operational', dbpulse: '2 alerts', glbviewer: 'Ready', craftcv: 'Ready', vaultiq: 'Locked' };
+import { useEffect, useMemo, useState } from 'react';
+import { modules, type AuditEvent, type ModuleId, type Project, type Run, type Workspace } from '@forgeos/contracts';
+
+type Overview = { workspace: Workspace; projects: Project[]; runs: Run[]; audit: AuditEvent[] };
 
 export default function Home() {
-  const [query, setQuery] = useState(''); const [selected, setSelected] = useState<ModuleId>('snapdiff'); const [commandOpen, setCommandOpen] = useState(false);
-  const filtered = useMemo(() => modules.filter(m => `${m.name} ${m.category} ${m.description}`.toLowerCase().includes(query.toLowerCase())), [query]);
-  const selectedModule = modules.find(m => m.id === selected)!;
+  const [overview, setOverview] = useState<Overview | null>(null);
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
+  const [workspaceId, setWorkspaceId] = useState('');
+  const [error, setError] = useState('');
+  const [query, setQuery] = useState('');
+  const [creating, setCreating] = useState(false);
+  const [configuring, setConfiguring] = useState(false);
+  const [name, setName] = useState('');
+  const [selectedModules, setSelectedModules] = useState<ModuleId[]>([]);
+  const enabledIds = overview?.workspace.moduleIds ?? modules.map(module => module.id);
+  const enabledModules = modules.filter(module => enabledIds.includes(module.id));
+  const filtered = useMemo(() => enabledModules.filter(module => `${module.name} ${module.category} ${module.description}`.toLowerCase().includes(query.toLowerCase())), [query, overview]);
+
+  async function refresh(id = workspaceId) {
+    try {
+      const response = await fetch(`/api/v1/overview${id ? `?workspaceId=${encodeURIComponent(id)}` : ''}`, { cache: 'no-store' });
+      if (!response.ok) throw new Error(`API returned ${response.status}`);
+      setOverview(await response.json());
+      setError('');
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Could not load workspace');
+    }
+  }
+
+  useEffect(() => {
+    void fetch('/api/v1/workspaces').then(response => response.ok ? response.json() : []).then(setWorkspaces);
+    const stored = localStorage.getItem('forgeos-workspace-id') || '';
+    setWorkspaceId(stored);
+    void refresh(stored);
+  }, []);
+  async function createWorkspace() {
+    const value = window.prompt('Workspace name');
+    if (!value?.trim()) return;
+    const response = await fetch('/api/v1/workspaces', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: value.trim() }) });
+    if (!response.ok) { setError(`Workspace creation failed (${response.status})`); return; }
+    const created = await response.json() as Workspace;
+    setWorkspaces(current => [...current, created]); setWorkspaceId(created.id); localStorage.setItem('forgeos-workspace-id', created.id); await refresh(created.id);
+  }
+  async function toggleModule(moduleId: ModuleId) {
+    if (!overview) return;
+    const current = overview.workspace.moduleIds;
+    const moduleIds = current.includes(moduleId) ? current.filter(id => id !== moduleId) : modules.map(module => module.id).filter(id => current.includes(id) || id === moduleId);
+    const response = await fetch(`/api/v1/workspaces/${overview.workspace.id}/modules`, {
+      method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ moduleIds }),
+    });
+    if (!response.ok) { setError(`Module settings could not be saved (${response.status})`); return; }
+    const workspace = await response.json() as Workspace;
+    setOverview(previous => previous ? { ...previous, workspace } : previous);
+    setWorkspaces(previous => previous.map(item => item.id === workspace.id ? workspace : item));
+    setSelectedModules(previous => previous.filter(id => moduleIds.includes(id)));
+    setError('');
+  }
+  async function createProject(event: React.FormEvent) {
+    event.preventDefault();
+    const response = await fetch(`/api/v1/projects${workspaceId ? `?workspaceId=${encodeURIComponent(workspaceId)}` : ''}`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: name.trim(), moduleIds: selectedModules }),
+    });
+    if (!response.ok) { setError(`Project creation failed (${response.status})`); return; }
+    setCreating(false); setName(''); setSelectedModules([]); await refresh();
+  }
+
+  const runs = overview?.runs ?? [];
+  const passed = runs.filter(run => run.status === 'passed').length;
+  const open = runs.filter(run => run.status === 'queued' || run.status === 'running').length;
   return <main className="shell">
-    <aside><div className="brand"><span>F</span> ForgeOS</div><div className="workspace">Acme Engineering <small>Cloud workspace</small></div><nav>{['Overview', 'Projects', 'Activity', 'Integrations', 'Settings'].map(x => <button key={x} className={x === 'Overview' ? 'active' : ''}>{x}</button>)}</nav><div className="nav-label">MODULES</div>{['Delivery', 'Quality', 'AI', 'Operations', 'Assets'].map(group => <section key={group}><div className="group">{group}</div>{modules.filter(m => m.category === group).map(m => <button key={m.id} onClick={() => setSelected(m.id)} className={selected === m.id ? 'selected' : ''}>{m.name}<i>{statuses[m.id]}</i></button>)}</section>)}<button className="bottom">⌘K Command palette</button></aside>
-    <section className="content"><header><div><p>WORKSPACE / OVERVIEW</p><h1>Good morning, engineering.</h1><span>Everything your team is building, testing, and operating—together.</span></div><div className="actions"><button onClick={() => setCommandOpen(true)}>⌕ Search</button><button className="primary">+ New project</button><div className="avatar">GS</div></div></header>
-      <div className="metrics"><Metric label="Active projects" value="12" trend="+2 this week" /><Metric label="Runs today" value="148" trend="94% successful" /><Metric label="Open incidents" value="2" trend="Needs attention" warn /><Metric label="Security score" value="92" trend="Excellent posture" /></div>
-      <div className="grid"><article className="modules"><div className="title"><div><p>WORKBENCH</p><h2>Product modules</h2></div><input aria-label="Search modules" value={query} onChange={e => setQuery(e.target.value)} placeholder="Filter modules…" /></div><div className="module-grid">{filtered.map(m => <button className={`module ${selected === m.id ? 'focus' : ''}`} onClick={() => setSelected(m.id)} key={m.id}><b>{m.name.slice(0, 2).toUpperCase()}</b><span><strong>{m.name}</strong><small>{m.description}</small></span><em>{statuses[m.id]}</em></button>)}</div></article>
-      <article className="selected-card"><p>{selectedModule.category.toUpperCase()} MODULE</p><h2>{selectedModule.name}</h2><span>{selectedModule.description}</span><div className="feature-list">{features[selected]!.map(f => <div key={f}>✓ {f}</div>)}</div><button className="primary">Open {selectedModule.name} →</button></article></div>
-      <div className="grid bottom-grid"><article><div className="title"><div><p>LIVE</p><h2>Cross-platform activity</h2></div><button>View all</button></div>{activity.map(a => <div className="activity" key={a[0]}><b>{a[0]}</b><span>{a[1]}</span><time>{a[2]}</time></div>)}</article><article><div className="title"><div><p>OPERATIONS</p><h2>Attention needed</h2></div></div><div className="notice"><b>Critical database alert</b><span>DBPulse flagged an out-of-window schema change.</span><button>Review alert →</button></div><div className="notice"><b>2 open incidents</b><span>PulseWatch is tracking service degradation.</span><button>Open incidents →</button></div></article></div>
-    </section>{commandOpen && <div className="modal" onClick={() => setCommandOpen(false)}><div onClick={e => e.stopPropagation()}><input autoFocus placeholder="Search ForgeOS modules, projects, runs…" value={query} onChange={e => setQuery(e.target.value)} />{filtered.map(m => <button key={m.id} onClick={() => { setSelected(m.id); setCommandOpen(false); }}>{m.name}<span>{m.description}</span></button>)}</div></div>}</main>;
+    <aside>
+      <a href="/" className="brand"><span>F</span> ForgeOS</a>
+      <div className="workspace"><select aria-label="Workspace" value={workspaceId || overview?.workspace.id || ''} onChange={event => { setWorkspaceId(event.target.value); localStorage.setItem('forgeos-workspace-id', event.target.value); void refresh(event.target.value); }}><option value="" disabled>Workspace</option>{workspaces.map(workspace => <option value={workspace.id} key={workspace.id}>{workspace.name}</option>)}</select><small>{overview?.workspace.plan ?? 'Connecting…'}</small><button onClick={() => void createWorkspace()}>+ Add workspace</button></div>
+      <nav><a className="active" href="/">Overview</a><a href="#projects">Projects</a><a href="#activity">Activity</a></nav>
+      <div className="nav-label">MODULES</div>
+      {['Delivery', 'Quality', 'AI', 'Operations', 'Assets', 'Security'].map(group => <section key={group}>
+        <div className="group">{group}</div>
+        {enabledModules.filter(module => module.category === group).map(module => <a key={module.id} href={`/modules/${module.id}`}>{module.name}</a>)}
+      </section>)}
+    </aside>
+    <section className="content">
+      <header><div><p>WORKSPACE / OVERVIEW</p><h1>{overview?.workspace.name ?? 'ForgeOS'}</h1><span>One address for your projects, tools, and operations.</span></div>
+        <div className="actions"><button onClick={() => document.getElementById('module-search')?.focus()}>⌕ Search</button><button onClick={() => setConfiguring(true)}>Customize modules</button><button className="primary" onClick={() => setCreating(true)}>+ New project</button><button onClick={() => void fetch('/api/session', { method: 'DELETE' }).then(() => window.location.assign('/login'))}>Sign out</button></div>
+      </header>
+      {error && <div className="notice error" role="alert">Could not connect to the ForgeOS API: {error}. Start the API service and refresh.</div>}
+      <div className="metrics">
+        <Metric label="Projects" value={overview ? String(overview.projects.length) : '—'} />
+        <Metric label="Runs" value={overview ? String(runs.length) : '—'} />
+        <Metric label="Passed" value={overview ? String(passed) : '—'} />
+        <Metric label="In progress" value={overview ? String(open) : '—'} />
+      </div>
+      <div className="grid"><article className="modules"><div className="title"><div><p>WORKBENCH</p><h2>All modules</h2></div><input id="module-search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Find a module…" /></div>
+        <div className="module-grid">{filtered.map(module => <a className="module" href={`/modules/${module.id}`} key={module.id}><b>{module.name.slice(0, 2).toUpperCase()}</b><span><strong>{module.name}</strong><small>{module.description}</small></span><em>Open →</em></a>)}</div></article>
+        <article className="selected-card" id="projects"><p>WORKSPACE PROJECTS</p><h2>Projects</h2>
+          {overview?.projects.length ? overview.projects.map(project => <div className="activity" key={project.id}><b>{project.name}</b><span>{project.moduleIds.length} modules</span></div>) : <div className="empty">No projects yet. Create one to organize runs and artifacts.</div>}
+        </article></div>
+      <div className="grid bottom-grid"><article id="activity"><div className="title"><div><p>LIVE</p><h2>Activity</h2></div><button onClick={() => void refresh()}>Refresh</button></div>
+        {overview?.audit.length ? [...overview.audit].reverse().map(event => <div className="activity" key={event.id}><b>{event.action}</b><span>{event.target}</span><time>{new Date(event.createdAt).toLocaleString()}</time></div>) : <div className="empty">No activity recorded yet.</div>}</article>
+        <article><div className="title"><div><p>RECENT</p><h2>Runs</h2></div></div>
+          {runs.length ? [...runs].reverse().slice(0, 6).map(run => <div className="activity" key={run.id}><b>{modules.find(module => module.id === run.moduleId)?.name}</b><span>{run.status}</span></div>) : <div className="empty">No module runs yet.</div>}</article></div>
+    </section>
+    {creating && <div className="modal" onClick={() => setCreating(false)}><form onClick={event => event.stopPropagation()} onSubmit={event => void createProject(event)}><h2>New project</h2><input autoFocus value={name} onChange={event => setName(event.target.value)} placeholder="Project name" required />
+      <div className="checks">{enabledModules.map(module => <label key={module.id}><input type="checkbox" checked={selectedModules.includes(module.id)} onChange={event => setSelectedModules(current => event.target.checked ? [...current, module.id] : current.filter(id => id !== module.id))} /> {module.name}</label>)}</div>
+      <button className="primary" type="submit">Create project</button><button type="button" onClick={() => setCreating(false)}>Cancel</button></form></div>}
+    {configuring && <div className="modal" onClick={() => setConfiguring(false)}><div className="module-settings" onClick={event => event.stopPropagation()}><h2>Customize modules</h2><p>Choose which tools are available in {overview?.workspace.name}. Changes are saved for this workspace.</p>
+      <div className="checks">{modules.map(module => <label key={module.id}><input type="checkbox" checked={enabledIds.includes(module.id)} onChange={() => void toggleModule(module.id)} /> {module.name}</label>)}</div>
+      <button onClick={() => setConfiguring(false)}>Done</button></div></div>}
+  </main>;
 }
-function Metric({ label, value, trend, warn }: { label: string; value: string; trend: string; warn?: boolean }) { return <article className="metric"><p>{label}</p><strong>{value}</strong><span className={warn ? 'warn' : ''}>{trend}</span></article>; }
-const features: Partial<Record<ModuleId, string[]>> = {
-  snapdiff: ['Playwright screenshot capture', 'Pixel-level visual diffs', 'GitHub baseline approvals'], commitcraft: ['Conventional commit messages', 'PR description drafting', 'OpenAI and local model adapters'], stackforge: ['Opinionated stack templates', 'Workspace-aware scaffolds', 'Generated project tracking'], comparer: ['Images, documents, Excel, JSON, SQL, folders'], regexforge: ['Live matching', 'Multi-flavor tests', 'AI pattern explanation'], loadlab: ['K6 scripts and scenarios', 'Queued private runners', 'Performance reports'], promptvault: ['Prompt versions and branches', 'A/B experiments', 'Provider runners'], probeai: ['YAML evaluation suites', 'Multi-provider adapters', 'Regression scoring'], pulsewatch: ['Endpoint checks', 'Incident lifecycle', 'Public status pages'], dbpulse: ['Activity stream', 'Row-level changes', 'Compliance exports'], glbviewer: ['GLB/GLTF uploads', 'Share links and embeds', 'Viewer controls'], craftcv: ['Private resume editing', 'Live preview', 'PDF export'], vaultiq: ['Client-side encrypted vault', 'Password generation', 'Security scoring']
-};
+function Metric({ label, value }: { label: string; value: string }) { return <article className="metric"><p>{label}</p><strong>{value}</strong></article>; }

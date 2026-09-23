@@ -1,0 +1,3 @@
+.module-settings{width:min(600px,92vw);background:#171e2b;border:1px solid #38445a;border-radius:12px;padding:20px;max-height:75vh;overflow:auto}
+.module-settings p{color:var(--muted);font-size:13px}
+.module-settings button{margin-top:18px}

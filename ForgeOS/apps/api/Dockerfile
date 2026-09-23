@@ -1,13 +1,11 @@
-FROM node:20-alpine AS build
+FROM node:20-alpine
 WORKDIR /app
 RUN corepack enable
-COPY package.json pnpm-workspace.yaml turbo.json ./
-COPY apps/api/package.json apps/api/package.json
-COPY packages/contracts/package.json packages/contracts/package.json
-COPY packages/security/package.json packages/security/package.json
-RUN pnpm install --no-frozen-lockfile
-COPY apps/api apps/api
-COPY packages/contracts packages/contracts
-COPY packages/security packages/security
-RUN pnpm --filter @forgeos/api build
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml turbo.json ./
+COPY apps ./apps
+COPY packages ./packages
+COPY services ./services
+RUN pnpm install --frozen-lockfile
+RUN pnpm exec turbo build --filter=@forgeos/api...
+ENV NODE_ENV=production
 CMD ["node", "apps/api/dist/main.js"]

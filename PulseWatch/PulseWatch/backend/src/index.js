@@ -2,18 +2,24 @@ const express = require('express');
 const cors = require('cors');
 const { v4: uuidv4 } = require('uuid');
 const axios = require('axios');
+const fs = require('fs');
+const path = require('path');
 
 const app = express();
 app.use(cors({ origin: process.env.CORS_ORIGIN || '*' }));
 app.use(express.json());
 
-// In-memory store
-let endpoints = [
-  { id: uuidv4(), name: 'GitHub API', url: 'https://api.github.com', method: 'GET', interval: 60, timeout: 10, status: 'UNKNOWN', latency: null, uptime24h: 0, uptime90d: 0, lastChecked: null, checks: [] },
-  { id: uuidv4(), name: 'Google',     url: 'https://www.google.com', method: 'GET', interval: 60, timeout: 10, status: 'UNKNOWN', latency: null, uptime24h: 0, uptime90d: 0, lastChecked: null, checks: [] }
-];
-let incidents = [];
-let notifications = [];
+const dataFile = process.env.PULSEWATCH_DATA_FILE || path.join(process.cwd(), 'data', 'pulsewatch.json');
+let saved = {};
+try { saved = JSON.parse(fs.readFileSync(dataFile, 'utf8')); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+let endpoints = Array.isArray(saved.endpoints) ? saved.endpoints : [];
+let incidents = Array.isArray(saved.incidents) ? saved.incidents : [];
+let notifications = Array.isArray(saved.notifications) ? saved.notifications : [];
+function persist() {
+  fs.mkdirSync(path.dirname(dataFile), { recursive: true });
+  fs.writeFileSync(dataFile + '.tmp', JSON.stringify({ endpoints, incidents, notifications }));
+  fs.renameSync(dataFile + '.tmp', dataFile);
+}
 
 const MAX_CHECKS = 8640;
 
@@ -64,6 +70,7 @@ async function checkEndpoint(ep) {
     notifications.unshift({ id: uuidv4(), type: 'UP', message: `${ep.name} recovered`, ts: now.toISOString(), read: false });
     if (notifications.length > 100) notifications.pop();
   }
+  persist();
 }
 
 const timers = {};
@@ -84,8 +91,10 @@ app.get('/api/endpoints/:id', (req, res) => {
 app.post('/api/endpoints', (req, res) => {
   const { name, url, method='GET', interval=60, timeout=10 } = req.body;
   if (!name || !url) return res.status(400).json({ error: 'name and url required' });
-  const ep = { id: uuidv4(), name, url, method, interval, timeout, status: 'UNKNOWN', latency: null, uptime24h: 0, uptime90d: 0, lastChecked: null, checks: [] };
+  try { if (!['http:', 'https:'].includes(new URL(url).protocol)) throw new Error(); } catch { return res.status(400).json({ error: 'A valid HTTP or HTTPS URL is required' }); }
+  const ep = { id: uuidv4(), name, url, method, interval: Math.max(10, Number(interval) || 60), timeout: Math.min(60, Math.max(1, Number(timeout) || 10)), status: 'UNKNOWN', latency: null, uptime24h: 0, uptime90d: 0, lastChecked: null, checks: [] };
   endpoints.push(ep);
+  persist();
   scheduleEndpoint(ep);
   res.status(201).json({ ...ep, checks: undefined });
 });
@@ -98,6 +107,7 @@ app.put('/api/endpoints/:id', (req, res) => {
   if (method) ep.method = method;
   if (interval) ep.interval = Number(interval);
   if (timeout) ep.timeout = Number(timeout);
+  persist();
   scheduleEndpoint(ep);
   res.json({ ...ep, checks: undefined });
 });
@@ -106,6 +116,7 @@ app.delete('/api/endpoints/:id', (req, res) => {
   if (idx === -1) return res.status(404).json({ error: 'Not found' });
   clearInterval(timers[endpoints[idx].id]);
   endpoints.splice(idx, 1);
+  persist();
   res.json({ ok: true });
 });
 app.post('/api/endpoints/:id/check', async (req, res) => {
@@ -120,7 +131,7 @@ app.get('/api/incidents', (_, res) => res.json(incidents));
 
 // Notifications
 app.get('/api/notifications', (_, res) => res.json(notifications));
-app.post('/api/notifications/read-all', (_, res) => { notifications.forEach(n => (n.read = true)); res.json({ ok: true }); });
+app.post('/api/notifications/read-all', (_, res) => { notifications.forEach(n => (n.read = true)); persist(); res.json({ ok: true }); });
 
 // Stats
 app.get('/api/stats', (_, res) => {

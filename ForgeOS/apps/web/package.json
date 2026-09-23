@@ -1,6 +1,6 @@
 {
   "name": "@forgeos/web", "private": true,
-  "scripts": { "dev": "next dev", "build": "next build", "start": "next start", "lint": "next lint", "typecheck": "tsc --noEmit" },
-  "dependencies": { "@forgeos/contracts": "workspace:*", "next": "^15.1.0", "react": "^19.0.0", "react-dom": "^19.0.0" },
-  "devDependencies": { "@types/node": "^22.10.0", "@types/react": "^19.0.0", "typescript": "^5.7.2" }
+  "scripts": { "dev": "node ../../scripts/dev-web.mjs", "build": "next build", "start": "next start", "lint": "next lint", "typecheck": "tsc --noEmit" },
+  "dependencies": { "@forgeos/contracts": "workspace:*", "jszip": "^3.10.1", "next": "^15.1.0", "react": "^19.0.0", "react-dom": "^19.0.0", "three": "^0.170.0" },
+  "devDependencies": { "@types/node": "^22.10.0", "@types/react": "^19.0.0", "@types/three": "^0.170.0", "typescript": "^5.7.2" }
 }

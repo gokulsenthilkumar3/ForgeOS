@@ -1,6 +1,7 @@
 import { Controller, Post, Body, HttpException, HttpStatus, UnauthorizedException } from '@nestjs/common';
 import { VerificationService, VerificationRequest, VerificationResult } from './verification.service';
 import { TokenService, TokenPayload } from '../token/token.service';
+import { Public } from '../common/guards/api-key.guard';
 
 @Controller('api/verification')
 export class VerificationController {
@@ -10,6 +11,7 @@ export class VerificationController {
   ) {}
 
   @Post('verify')
+  @Public()
   async verifyResponse(@Body() request: VerificationRequest): Promise<VerificationResult> {
     try {
       return await this.verificationService.verifyResponse(request);
