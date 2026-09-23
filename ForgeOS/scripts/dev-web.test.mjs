@@ -3,7 +3,7 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { test } from 'node:test';
-import { ensureDevCredentials, parseEnv, validCredential } from './dev-web.mjs';
+import { ensureDevCredentials, parseEnv, validCredential, verifyDevApi } from './dev-web.mjs';
 
 test('example credentials are rejected', () => {
   assert.equal(validCredential('replace-with-at-least-32-random-characters', 32), false);
@@ -26,4 +26,15 @@ test('local dev generates and reuses safe credentials when root file has example
     assert.equal(second.password, first.password);
     assert.equal(second.secret, first.secret);
   } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('standalone web accepts a ForgeOS API health response', async () => {
+  await verifyDevApi({ FORGEOS_API_INTERNAL_URL: 'http://api.test' }, async url => {
+    assert.equal(url, 'http://api.test/v1/health');
+    return { ok: true, json: async () => ({ status: 'ok' }) };
+  });
+});
+
+test('standalone web rejects an unrelated service on the API port', async () => {
+  await assert.rejects(() => verifyDevApi({}, async () => ({ ok: true, json: async () => ({ app: 'unrelated' }) })), /ForgeOS API is not running/);
 });

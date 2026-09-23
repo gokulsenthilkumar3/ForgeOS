@@ -21,3 +21,5 @@ These are working entry points, not full parity with every standalone product. T
 ## Development
 
 Install dependencies with `pnpm install`. The ForgeOS API requires PostgreSQL via `DATABASE_URL`; MathShield and PulseWatch run from their source folders. `pnpm build` checks the ForgeOS packages. For local web development, `pnpm --filter @forgeos/web dev -- --port 3002` loads valid credentials from `.env`; when those are still example values, it creates an ignored `apps/web/.env.local` with random credentials. Open that file to find the administrator password, then restart any web server that was already running. Production and Docker deployments must supply their own strong credentials.
+
+Do not run the standalone web dev server on port 3000 while Compose owns that port. The dev launcher checks that its configured API URL responds as ForgeOS; it exits with an explanation if another application is listening there. Use Compose for the complete one-port product. Run `node scripts/smoke.mjs` with `FORGEOS_ADMIN_PASSWORD` set to check the signed-in routes on the configured public address.

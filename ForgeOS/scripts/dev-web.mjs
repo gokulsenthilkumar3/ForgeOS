@@ -41,8 +41,19 @@ export function ensureDevCredentials(rootDir, webDir, environment = process.env)
   return { password, secret, generated, localFile };
 }
 
+export async function verifyDevApi(environment = process.env, request = fetch) {
+  const base = environment.FORGEOS_API_INTERNAL_URL || 'http://127.0.0.1:4000';
+  try {
+    const response = await request(`${base}/v1/health`, { signal: AbortSignal.timeout(5000) });
+    if (!response.ok || (await response.json()).status !== 'ok') throw new Error('unexpected response');
+  } catch {
+    throw new Error(`ForgeOS API is not running at ${base}. Start the full Docker Compose stack, or set FORGEOS_API_INTERNAL_URL to a ForgeOS API before starting standalone web development.`);
+  }
+}
+
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
+    await verifyDevApi();
     const credentials = ensureDevCredentials(root, web);
     if (credentials.generated) console.log(`ForgeOS local login created in ${credentials.localFile}. Open that file to find your administrator password.`);
     const child = spawn(process.execPath, [resolve(web, 'node_modules/next/dist/bin/next'), 'dev', ...process.argv.slice(2)], {

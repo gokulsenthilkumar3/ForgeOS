@@ -1,0 +1,60 @@
+name: ForgeOS CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: pnpm
+          cache-dependency-path: ForgeOS/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+        working-directory: ForgeOS
+      - run: pnpm typecheck
+        working-directory: ForgeOS
+      - run: pnpm test
+        working-directory: ForgeOS
+      - run: pnpm build
+        working-directory: ForgeOS
+
+  single-port-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Create temporary test credentials
+        shell: bash
+        run: |
+          for key in FORGEOS_ADMIN_PASSWORD FORGEOS_SESSION_SECRET FORGEOS_DB_PASSWORD FORGEOS_STORAGE_PASSWORD MATHSHIELD_JWT_SECRET MATHSHIELD_API_KEY_SECRET; do
+            value="$(openssl rand -hex 32)"
+            echo "::add-mask::$value"
+            echo "$key=$value" >> "$GITHUB_ENV"
+          done
+          echo 'FORGEOS_PUBLIC_PORT=3000' >> "$GITHUB_ENV"
+      - name: Start private services and one public web port
+        run: docker compose -f ForgeOS/docker-compose.yml --project-directory ForgeOS up -d --build
+      - name: Assert only port 3000 is published
+        run: |
+          docker compose -f ForgeOS/docker-compose.yml --project-directory ForgeOS ps --format json \
+            | jq -s -e '([.[] | .Publishers[]? | select(.PublishedPort > 0) | .PublishedPort] | unique) == [3000]'
+      - name: Check authenticated routes and all modules
+        run: node ForgeOS/scripts/smoke.mjs
+      - name: Show service status on failure
+        if: failure()
+        run: docker compose -f ForgeOS/docker-compose.yml --project-directory ForgeOS ps
+      - name: Stop test services
+        if: always()
+        run: docker compose -f ForgeOS/docker-compose.yml --project-directory ForgeOS down

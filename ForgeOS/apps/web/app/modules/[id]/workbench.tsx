@@ -1,7 +1,8 @@
 'use client';
 import type { ModuleId } from '@forgeos/contracts';
 import { CommitTool, CompareTool, RegexTool, ResumeTool, VaultTool, MathShieldTool, ImageDiffTool } from './workbench-tools';
-import { ScaffoldTool, PromptTool, EvaluationTool, LoadScriptTool, PulseWatchTool, AuditExplorerTool } from './more-tools';
+import { ScaffoldTool, EvaluationTool, LoadScriptTool, PulseWatchTool, AuditExplorerTool } from './more-tools';
+import { PromptTool } from './prompt-vault';
 import { ModelViewerTool } from './model-viewer';
 
 export function Workbench({ id }: { id: ModuleId }) {

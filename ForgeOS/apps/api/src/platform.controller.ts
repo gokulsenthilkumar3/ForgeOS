@@ -1,5 +1,5 @@
-import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
-import { IsArray, IsBoolean, IsIn, IsString, Length } from 'class-validator';
+import { BadRequestException, Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { IsArray, IsBoolean, IsIn, IsObject, IsString, Length } from 'class-validator';
 import { modules, type ModuleId } from '@forgeos/contracts';
 import { PlatformService } from './platform.service';
 
@@ -8,6 +8,7 @@ class ProjectInput { @IsString() @Length(1, 100) name!: string; @IsArray() @IsIn
 class ModulesInput { @IsArray() @IsIn(modules.map(module => module.id), { each: true }) moduleIds!: ModuleId[]; }
 class RunInput { @IsString() projectId!: string; @IsIn(modules.map(module => module.id)) moduleId!: ModuleId; }
 class CompleteInput { @IsBoolean() passed!: boolean; }
+class ModuleRecordInput { @IsString() @Length(1, 40) recordType!: string; @IsString() @Length(1, 100) name!: string; @IsObject() content!: Record<string, unknown>; }
 
 @Controller()
 export class PlatformController {
@@ -22,4 +23,12 @@ export class PlatformController {
   @Post('projects') project(@Body() input: ProjectInput, @Query('workspaceId') workspaceId?: string) { return this.platform.createProject(input.name, input.moduleIds, workspaceId); }
   @Post('runs') run(@Body() input: RunInput, @Query('workspaceId') workspaceId?: string) { return this.platform.startRun(input.projectId, input.moduleId, workspaceId); }
   @Post('runs/:id/complete') complete(@Param('id') id: string, @Body() input: CompleteInput, @Query('workspaceId') workspaceId?: string) { return this.platform.completeRun(id, input.passed, workspaceId); }
+  @Get('modules/:id/records') moduleRecords(@Param('id') id: ModuleId, @Query('workspaceId') workspaceId?: string) {
+    if (!modules.some(module => module.id === id)) throw new BadRequestException('Unknown module');
+    return this.platform.listModuleRecords(id, workspaceId);
+  }
+  @Post('modules/:id/records') saveModuleRecord(@Param('id') id: ModuleId, @Body() input: ModuleRecordInput, @Query('workspaceId') workspaceId?: string) {
+    if (!modules.some(module => module.id === id)) throw new BadRequestException('Unknown module');
+    return this.platform.saveModuleRecord(id, input.recordType, input.name, input.content, workspaceId);
+  }
 }

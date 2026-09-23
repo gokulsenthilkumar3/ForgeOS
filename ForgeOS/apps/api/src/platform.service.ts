@@ -35,6 +35,26 @@ export class PlatformService implements OnModuleInit, OnModuleDestroy {
           await client.query('COMMIT');
         } catch (error) { await client.query('ROLLBACK'); throw error; }
       }
+      const recordsMigration = await client.query('SELECT 1 FROM forgeos_migrations WHERE version = 3');
+      if (!recordsMigration.rowCount) {
+        await client.query('BEGIN');
+        try {
+          await client.query(`CREATE TABLE IF NOT EXISTS module_records (
+            id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+            workspace_id uuid NOT NULL REFERENCES workspaces(id),
+            module_id text NOT NULL,
+            record_type text NOT NULL,
+            name text NOT NULL,
+            content jsonb NOT NULL DEFAULT '{}'::jsonb,
+            created_at timestamptz NOT NULL DEFAULT now(),
+            updated_at timestamptz NOT NULL DEFAULT now(),
+            UNIQUE (workspace_id, module_id, record_type, name)
+          )`);
+          await client.query('CREATE INDEX IF NOT EXISTS module_records_workspace_idx ON module_records(workspace_id, module_id, updated_at DESC)');
+          await client.query('INSERT INTO forgeos_migrations(version) VALUES (3)');
+          await client.query('COMMIT');
+        } catch (error) { await client.query('ROLLBACK'); throw error; }
+      }
       await client.query(`INSERT INTO workspaces (id, name, slug, deployment_mode) VALUES ('00000000-0000-4000-8000-000000000001', 'Personal workspace', 'personal', 'self-hosted') ON CONFLICT (id) DO NOTHING`);
     } finally { await client.query('SELECT pg_advisory_unlock(72644961)'); client.release(); }
   }
@@ -94,6 +114,19 @@ export class PlatformService implements OnModuleInit, OnModuleDestroy {
     const result = await this.pool.query('UPDATE runs r SET status = $1, finished_at = now() FROM projects p WHERE r.project_id = p.id AND r.id = $2 AND p.workspace_id = $3 RETURNING r.id, r.project_id AS "projectId", r.module_id AS "moduleId", r.status, r.finished_at AS "finishedAt"', [passed ? 'passed' : 'failed', runId, workspace.id]);
     if (!result.rows[0]) throw new NotFoundException('Run not found');
     await this.log(workspace.id, 'run.completed', runId);
+    return result.rows[0];
+  }
+  async listModuleRecords(moduleId: ModuleId, workspaceId?: string) {
+    const workspace = await this.workspace(workspaceId);
+    if (!workspace.moduleIds.includes(moduleId)) throw new NotFoundException('Module is disabled for this workspace');
+    const result = await this.pool.query('SELECT id, workspace_id AS "workspaceId", module_id AS "moduleId", record_type AS "recordType", name, content, created_at AS "createdAt", updated_at AS "updatedAt" FROM module_records WHERE workspace_id = $1 AND module_id = $2 ORDER BY updated_at DESC', [workspace.id, moduleId]);
+    return result.rows;
+  }
+  async saveModuleRecord(moduleId: ModuleId, recordType: string, name: string, content: Record<string, unknown>, workspaceId?: string) {
+    const workspace = await this.workspace(workspaceId);
+    if (!workspace.moduleIds.includes(moduleId)) throw new NotFoundException('Module is disabled for this workspace');
+    const result = await this.pool.query('INSERT INTO module_records(workspace_id,module_id,record_type,name,content) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (workspace_id,module_id,record_type,name) DO UPDATE SET content = EXCLUDED.content, updated_at = now() RETURNING id, workspace_id AS "workspaceId", module_id AS "moduleId", record_type AS "recordType", name, content, created_at AS "createdAt", updated_at AS "updatedAt"', [workspace.id, moduleId, recordType, name, JSON.stringify(content)]);
+    await this.log(workspace.id, 'module.record.saved', `${moduleId}:${result.rows[0].id}`);
     return result.rows[0];
   }
   private async log(workspaceId: string, action: string, target: string) {

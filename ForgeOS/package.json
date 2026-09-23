@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "turbo dev",
     "build": "turbo build",
-    "test": "turbo test",
+    "test": "node --test scripts/dev-web.test.mjs && turbo test",
     "lint": "turbo lint",
     "typecheck": "turbo typecheck"
   },
