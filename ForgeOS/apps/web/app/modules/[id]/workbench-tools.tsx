@@ -1,6 +1,7 @@
 'use client';
 import { useRef, useState } from 'react';
 import { useLlm } from './use-llm';
+import { openVault, persistVault, workspaceVaultKey, type UnlockedVault } from './vault-storage';
 
 export function CommitTool() {
   const [diff, setDiff] = useState(''); const [kind, setKind] = useState('feat'); const [scope, setScope] = useState(''); const [summary, setSummary] = useState('');
@@ -32,24 +33,62 @@ export function ResumeTool() {
   return <section className="tool-card"><h2>Build a CV</h2><div className="tool-row"><input value={name} onChange={event => setName(event.target.value)} placeholder="Full name" /><input value={title} onChange={event => setTitle(event.target.value)} placeholder="Professional title" /></div><input value={email} onChange={event => setEmail(event.target.value)} placeholder="Email" /><textarea value={summary} onChange={event => setSummary(event.target.value)} placeholder="Profile summary" rows={4} /><textarea value={experience} onChange={event => setExperience(event.target.value)} placeholder="Experience" rows={7} /><button onClick={() => window.print()}>Print / save as PDF</button><div className="cv-preview"><h1>{name || 'Your name'}</h1><h2>{title}</h2><p>{email}</p><p>{summary}</p><h3>Experience</h3><p className="preline">{experience}</p></div></section>;
 }
 
-type SavedVault = { salt: string; iv: string; data: string };
-const vaultKey = () => `forgeos-vault-v1:${localStorage.getItem('forgeos-workspace-id') || 'default'}`;
-const bytesToBase64 = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes));
-const base64ToBytes = (value: string) => Uint8Array.from(atob(value), char => char.charCodeAt(0));
-async function derive(password: string, salt: Uint8Array) { const material = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveKey']); return crypto.subtle.deriveKey({ name: 'PBKDF2', salt: new Uint8Array(salt), iterations: 200000, hash: 'SHA-256' }, material, { name: 'AES-GCM', length: 256 }, false, ['encrypt','decrypt']); }
 export function VaultTool() {
-  const [password, setPassword] = useState(''); const [entries, setEntries] = useState<Array<{ name: string; username: string; password: string }>>([]); const [unlocked, setUnlocked] = useState(false); const [message, setMessage] = useState(''); const [name, setName] = useState(''); const [username, setUsername] = useState(''); const [secret, setSecret] = useState('');
-  async function unlock() { try { const raw = localStorage.getItem(vaultKey()); if (!raw) { setEntries([]); setUnlocked(true); return; } const saved = JSON.parse(raw) as SavedVault; const key = await derive(password, base64ToBytes(saved.salt)); const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: base64ToBytes(saved.iv) }, key, base64ToBytes(saved.data)); setEntries(JSON.parse(new TextDecoder().decode(plain))); setUnlocked(true); setMessage('Vault unlocked'); } catch { setMessage('Could not unlock vault. Check your master password.'); } }
-  async function save(next: typeof entries) { const salt = crypto.getRandomValues(new Uint8Array(16)), iv = crypto.getRandomValues(new Uint8Array(12)); const key = await derive(password, salt); const encrypted = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, new TextEncoder().encode(JSON.stringify(next))); localStorage.setItem(vaultKey(), JSON.stringify({ salt: bytesToBase64(salt), iv: bytesToBase64(iv), data: bytesToBase64(new Uint8Array(encrypted)) })); setEntries(next); setMessage('Encrypted vault saved on this device'); }
+  const activeVault = useRef<UnlockedVault | null>(null);
+  const savingRef = useRef(false);
+  const [password, setPassword] = useState(''); const [entries, setEntries] = useState<Array<{ name: string; username: string; password: string }>>([]); const [unlocked, setUnlocked] = useState(false); const [saving, setSaving] = useState(false); const [message, setMessage] = useState(''); const [name, setName] = useState(''); const [username, setUsername] = useState(''); const [secret, setSecret] = useState(''); const [showSecret, setShowSecret] = useState(false);
+  async function unlock() {
+    if (!password) return;
+    try {
+      const existing = Boolean(localStorage.getItem(workspaceVaultKey(localStorage)));
+      const vault = await openVault(localStorage, password);
+      activeVault.current = vault;
+      setEntries(vault.entries);
+      setPassword(''); setUnlocked(true);
+      setMessage(existing ? 'Vault unlocked' : 'New vault ready. Add an entry to save it.');
+    } catch { setMessage('Could not unlock vault. Check your master password and workspace.'); }
+  }
+  function lock() { if (activeVault.current) activeVault.current.active = false; activeVault.current = null; setEntries([]); setUnlocked(false); setPassword(''); setName(''); setUsername(''); setSecret(''); setMessage('Vault locked'); }
+  async function save(next: typeof entries) {
+    const vault = activeVault.current;
+    if (!vault || savingRef.current) return;
+    if (workspaceVaultKey(localStorage) !== vault.storageKey) { lock(); setMessage('Workspace changed. Unlock its vault before saving.'); return; }
+    savingRef.current = true; setSaving(true);
+    try {
+      await persistVault(localStorage, vault, next);
+      if (activeVault.current !== vault) return;
+      setEntries(next); setName(''); setUsername(''); setSecret(''); setMessage('Encrypted vault saved on this device');
+    } catch { setMessage('Vault was not saved. Check the workspace and browser storage, then try again.'); }
+    finally { savingRef.current = false; setSaving(false); }
+  }
   const generate = () => { const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%'; const values = crypto.getRandomValues(new Uint32Array(24)); setSecret([...values].map(value => alphabet[value % alphabet.length]).join('')); };
-  return <section className="tool-card"><h2>Private vault</h2><p>Entries are encrypted in this browser with your master password. Losing that password means the data cannot be recovered.</p><input type="password" value={password} onChange={event => setPassword(event.target.value)} placeholder="Master password" />{!unlocked ? <button disabled={!password} onClick={() => void unlock()}>Unlock or create vault</button> : <><div className="tool-row"><input value={name} onChange={event => setName(event.target.value)} placeholder="Entry name" /><input value={username} onChange={event => setUsername(event.target.value)} placeholder="Username" /></div><div className="tool-row"><input type="text" value={secret} onChange={event => setSecret(event.target.value)} placeholder="Password" /><button onClick={generate}>Generate</button></div><button disabled={!name || !secret} onClick={() => void save([...entries, { name, username, password: secret }])}>Save entry</button>{entries.map((entry, index) => <div className="activity" key={index}><b>{entry.name}</b><span>{entry.username}</span><button onClick={() => void navigator.clipboard.writeText(entry.password)}>Copy password</button></div>)}</>}{message && <div role="status">{message}</div>}</section>;
+  return <section className="tool-card"><h2>Private vault</h2><p>Entries are encrypted in this browser with your master password. Losing that password means the data cannot be recovered.</p>{!unlocked ? <><input type="password" autoComplete="current-password" value={password} onChange={event => setPassword(event.target.value)} placeholder="Master password" aria-label="Master password" /><button disabled={!password} onClick={() => void unlock()}>Unlock or create vault</button></> : <><button onClick={lock}>Lock vault</button><div className="tool-row"><input value={name} onChange={event => setName(event.target.value)} placeholder="Entry name" /><input value={username} onChange={event => setUsername(event.target.value)} placeholder="Username" /></div><div className="tool-row"><input type={showSecret ? 'text' : 'password'} autoComplete="new-password" value={secret} onChange={event => setSecret(event.target.value)} placeholder="Password" aria-label="Entry password" /><button onClick={() => setShowSecret(value => !value)}>{showSecret ? 'Hide' : 'Show'}</button><button onClick={generate}>Generate</button></div><button disabled={saving || !name.trim() || !secret} onClick={() => void save([...entries, { name: name.trim(), username, password: secret }])}>{saving ? 'Saving…' : 'Save entry'}</button>{entries.map((entry, index) => <div className="activity" key={index}><b>{entry.name}</b><span>{entry.username}</span><button onClick={() => void navigator.clipboard.writeText(entry.password)}>Copy password</button></div>)}</>}{message && <div role="status">{message}</div>}</section>;
 }
 
 export function MathShieldTool() {
-  const [challenge, setChallenge] = useState<{ id: string; question: string; options?: string[] } | null>(null); const [answer, setAnswer] = useState(''); const [result, setResult] = useState('');
-  async function generate() { setResult(''); const response = await fetch('/api/mathshield/challenge/generate', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ difficulty: 'easy', type: 'arithmetic' }) }); if (!response.ok) { setResult(`Challenge service returned ${response.status}`); return; } const value = await response.json(); setChallenge(value); }
-  async function verify() { if (!challenge) return; const response = await fetch('/api/mathshield/verification/verify', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ challengeId: challenge.id, answer, timeTaken: 5000 }) }); const value = await response.json(); setResult(response.ok ? (value.success ? `Verified · ${value.riskLevel ?? 'unknown'} risk` : 'Verification failed') : value.message || 'Verification failed'); }
-  return <section className="tool-card"><h2>Human verification</h2><p>Generate and verify a challenge through the ForgeOS origin. The embeddable widget is available at <code>/shield.js</code>.</p><button onClick={() => void generate()}>Generate challenge</button>{challenge && <><h3>{challenge.question}</h3>{challenge.options?.map(option => <button key={option} onClick={() => setAnswer(option)}>{option}</button>)}<input value={answer} onChange={event => setAnswer(event.target.value)} placeholder="Your answer" /><button className="primary" onClick={() => void verify()}>Verify</button></>}{result && <pre role="status">{result}</pre>}</section>;
+  const startedAt = useRef(0);
+  const [challenge, setChallenge] = useState<{ id: string; question: string; options?: string[] } | null>(null); const [answer, setAnswer] = useState(''); const [result, setResult] = useState(''); const [busy, setBusy] = useState(false);
+  async function generate() {
+    setBusy(true); setResult(''); setChallenge(null); setAnswer('');
+    try {
+      const response = await fetch('/api/mathshield/challenge/generate', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ difficulty: 'easy', type: 'arithmetic' }) });
+      if (!response.ok) throw new Error(`Challenge service returned ${response.status}`);
+      const value = await response.json(); startedAt.current = Date.now(); setChallenge(value);
+    } catch (cause) { setResult(cause instanceof Error ? cause.message : 'Could not generate challenge'); }
+    finally { setBusy(false); }
+  }
+  async function verify() {
+    if (!challenge || !answer.trim() || busy) return;
+    setBusy(true);
+    try {
+      const response = await fetch('/api/mathshield/verification/verify', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ challengeId: challenge.id, answer: answer.trim(), timeTaken: Math.max(0, Date.now() - startedAt.current) }) });
+      const value = await response.json();
+      setResult(response.ok ? (value.success ? `Verified · ${value.riskLevel ?? 'unknown'} risk` : 'Verification failed. Generate another challenge to retry.') : value.message || 'Verification failed');
+      if (response.ok || response.status === 404) setChallenge(null);
+    } catch { setResult('Could not reach verification service. Try again.'); }
+    finally { setBusy(false); }
+  }
+  return <section className="tool-card"><h2>Human verification</h2><p>Generate and verify a challenge through the ForgeOS origin. The embeddable widget is available at <code>/shield.js</code>.</p><button disabled={busy} onClick={() => void generate()}>{busy ? 'Working…' : 'Generate challenge'}</button>{challenge && <><h3>{challenge.question}</h3>{challenge.options?.map(option => <button key={option} aria-pressed={answer === option} onClick={() => setAnswer(option)}>{option}</button>)}<input value={answer} onChange={event => setAnswer(event.target.value)} placeholder="Your answer" aria-label="Challenge answer" /><button className="primary" disabled={busy || !answer.trim()} onClick={() => void verify()}>Verify</button></>}{result && <pre role="status">{result}</pre>}</section>;
 }
 
 export function ImageDiffTool() {

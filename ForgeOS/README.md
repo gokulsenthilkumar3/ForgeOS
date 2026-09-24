@@ -6,11 +6,23 @@ This app is part of the single parent repository at `D:\Projects\ForgeOS`. The s
 
 ## Start locally
 
-1. Copy `.env.example` to `.env` and replace every placeholder password and secret.
+1. Copy `.env.example` to `.env`, replace every placeholder password and secret, and set `FORGEOS_MINIO_IMAGE` as described below.
 2. Start Docker Desktop, then run `docker compose up --build` from this directory.
 3. Open `http://localhost:3000` and sign in with `FORGEOS_ADMIN_PASSWORD`.
 
 The web routes are `/modules/<module-id>`, ForgeOS API routes are `/api/v1/*`, MathShield uses `/api/mathshield/*` and `/shield.js`, and PulseWatch uses `/api/pulsewatch/*`. Compose publishes only one application port. Set `FORGEOS_PUBLIC_PORT` if port 3000 is already in use, then open `http://localhost:<that-port>`.
+
+### Storage image and existing data
+
+`FORGEOS_MINIO_IMAGE` is required. Compose deliberately has no default: the former floating `minio/minio` image can no longer be pulled reliably, and automatically selecting another image for an existing `minio-data` volume could downgrade its storage format. **Do not remove the volume or change its image until you have identified the running version and backed up its data.** Identify the ForgeOS MinIO container in Docker Desktop or with `docker ps -a --filter label=com.docker.compose.service=minio`, then inspect that verified container ID:
+
+```powershell
+$minioContainer = '<verified ForgeOS MinIO container ID>'
+docker inspect $minioContainer --format '{{.Config.Image}}'
+docker exec $minioContainer minio --version # when the container is running
+```
+
+Set `FORGEOS_MINIO_IMAGE` in `.env` to that same inspected image reference before restarting. If the old container/image cannot be inspected, recover its version from your deployment records or backup before changing the image. New installations should use a reviewed, version-pinned MinIO image compatible with this Compose command. The CI workflow uses `quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z` **only with disposable test data**. That official Quay release predates MinIO's [2025-10-15 security fix](https://github.com/minio/minio/releases/tag/RELEASE.2025-10-15T17-29-55Z); do not treat the CI pin as a patched production choice. MinIO's release instructions require building the patched container from that source tag, then setting `FORGEOS_MINIO_IMAGE` to the resulting local or private-registry image. Validate storage compatibility and backup recovery before upgrading a persistent deployment.
 
 ## Available workbenches
 

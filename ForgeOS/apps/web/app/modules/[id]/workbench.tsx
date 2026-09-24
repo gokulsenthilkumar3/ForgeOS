@@ -1,7 +1,11 @@
 'use client';
 import type { ModuleId } from '@forgeos/contracts';
-import { CommitTool, CompareTool, RegexTool, ResumeTool, VaultTool, MathShieldTool, ImageDiffTool } from './workbench-tools';
-import { ScaffoldTool, EvaluationTool, LoadScriptTool, PulseWatchTool, AuditExplorerTool } from './more-tools';
+import { ResumeTool, VaultTool, MathShieldTool, ImageDiffTool } from './workbench-tools';
+import { CommitTool } from './commit-tool';
+import { CompareTool } from './compare-tool';
+import { RegexTool } from './regex-tool';
+import { EvaluationTool, LoadScriptTool, PulseWatchTool, AuditExplorerTool } from './more-tools';
+import { ScaffoldTool } from './scaffold-tool';
 import { PromptTool } from './prompt-vault';
 import { ModelViewerTool } from './model-viewer';
 

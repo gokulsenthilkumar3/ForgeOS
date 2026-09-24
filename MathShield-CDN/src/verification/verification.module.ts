@@ -5,9 +5,10 @@ import { ChallengeModule } from '../challenge/challenge.module';
 import { RiskModule } from '../risk/risk.module';
 import { TokenModule } from '../token/token.module';
 import { BehaviorModule } from '../behavior/behavior.module';
+import { AnalyticsModule } from '../analytics/analytics.module';
 
 @Module({
-  imports: [ChallengeModule, RiskModule, TokenModule, BehaviorModule],
+  imports: [ChallengeModule, RiskModule, TokenModule, BehaviorModule, AnalyticsModule],
   controllers: [VerificationController],
   providers: [VerificationService],
   exports: [VerificationService],

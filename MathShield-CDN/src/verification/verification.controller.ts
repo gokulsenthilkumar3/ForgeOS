@@ -1,4 +1,5 @@
-import { Controller, Post, Body, HttpException, HttpStatus, UnauthorizedException } from '@nestjs/common';
+import { Controller, Post, Body, HttpException, HttpStatus, Req, UnauthorizedException } from '@nestjs/common';
+import { Request } from 'express';
 import { VerificationService, VerificationRequest, VerificationResult } from './verification.service';
 import { TokenService, TokenPayload } from '../token/token.service';
 import { Public } from '../common/guards/api-key.guard';
@@ -12,13 +13,17 @@ export class VerificationController {
 
   @Post('verify')
   @Public()
-  async verifyResponse(@Body() request: VerificationRequest): Promise<VerificationResult> {
+  async verifyResponse(@Body() request: VerificationRequest, @Req() httpRequest: Request): Promise<VerificationResult> {
     try {
-      return await this.verificationService.verifyResponse(request);
+      return await this.verificationService.verifyResponse(request, {
+        ip: httpRequest.ip,
+        userAgent: httpRequest.get('user-agent')?.slice(0, 512),
+      });
     } catch (error) {
-      if (error.message === 'Challenge not found or expired') {
+      if (error instanceof Error && error.message === 'Challenge not found or expired') {
         throw new HttpException('Challenge not found or expired', HttpStatus.NOT_FOUND);
       }
+      if (error instanceof HttpException) throw error;
       console.error('[Verification Error]', error);
       throw new HttpException('Verification failed', HttpStatus.INTERNAL_SERVER_ERROR);
     }

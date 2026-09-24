@@ -117,7 +117,9 @@
   /* ─────────────────────────── HumanShield ─────────────────────────── */
   class HumanShield {
     constructor(opts = {}) {
-      this.opts = { apiKey: 'demo-key', theme: 'light', invisible: false, onVerified: null, onError: null, container: null, ...opts };
+      // Challenge issuance and answer submission are public endpoints. Never
+      // put the server's API key in embeddable JavaScript or HTML attributes.
+      this.opts = { theme: 'light', invisible: false, onVerified: null, onError: null, container: null, ...opts };
       this.challenge = null; this.startTime = null; this.timerInterval = null;
       this.overlay = null; this.widget = null; this.behaviorTracker = new BehaviorTracker();
       this._injectStyles();
@@ -181,7 +183,7 @@
       try {
         const res = await fetch(`${API_BASE}/challenge/generate`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${this.opts.apiKey}` },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ riskScore: 30 }),
         });
         if (!res.ok) throw new Error('Failed to generate challenge');
@@ -265,7 +267,7 @@
         const behaviorData = this.behaviorTracker.getData();
         const res = await fetch(`${API_BASE}/verification/verify`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${this.opts.apiKey}` },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ challengeId: this.challenge.id, answer: answer.toString().trim(), timeTaken, behaviorData }),
         });
         if (!res.ok) throw new Error('Verification failed');
@@ -337,7 +339,6 @@
   document.addEventListener('DOMContentLoaded', () => {
     document.querySelectorAll('[data-mathshield]').forEach(el => {
       const shield = new HumanShield({
-        apiKey: el.getAttribute('data-api-key') || 'demo-key',
         theme: el.getAttribute('data-theme') || 'light',
         invisible: el.getAttribute('data-invisible') === 'true',
       });

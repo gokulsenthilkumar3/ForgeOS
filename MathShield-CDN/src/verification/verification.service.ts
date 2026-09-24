@@ -1,8 +1,9 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { ChallengeService, Challenge } from '../challenge/challenge.service';
 import { RiskService } from '../risk/risk.service';
 import { TokenService, VerificationToken } from '../token/token.service';
 import { BehaviorService, BehaviorData } from '../behavior/behavior.service';
+import { AnalyticsService } from '../analytics/analytics.service';
 
 export { BehaviorData } from '../behavior/behavior.service';
 
@@ -13,6 +14,8 @@ export interface VerificationRequest {
   behaviorData?: BehaviorData;
   riskFactors?: any;
 }
+
+export interface RequestIdentity { ip?: string; userAgent?: string }
 
 export interface VerificationResult {
   success: boolean;
@@ -38,14 +41,21 @@ export interface VerificationResult {
 
 @Injectable()
 export class VerificationService {
+  private readonly logger = new Logger(VerificationService.name);
   constructor(
     private readonly challengeService: ChallengeService,
     private readonly riskService: RiskService,
     private readonly tokenService: TokenService,
     private readonly behaviorService: BehaviorService,
+    private readonly analyticsService: AnalyticsService,
   ) {}
 
-  async verifyResponse(request: VerificationRequest): Promise<VerificationResult> {
+  async verifyResponse(request: VerificationRequest, identity: RequestIdentity = {}): Promise<VerificationResult> {
+    if (!request || typeof request.challengeId !== 'string' || !request.challengeId.trim() ||
+        (typeof request.answer !== 'string' && typeof request.answer !== 'number') ||
+        !String(request.answer).trim() || !Number.isFinite(request.timeTaken) || request.timeTaken < 0) {
+      throw new BadRequestException('Valid challengeId, answer and timeTaken are required');
+    }
     // Get the challenge
     const challenge = await this.challengeService.getChallengeById(request.challengeId);
     if (!challenge) {
@@ -78,8 +88,8 @@ export class VerificationService {
     // Calculate risk-based adjustment
     let riskScore = 0;
     let riskLevel: 'low' | 'medium' | 'high' = 'low';
-    if (request.riskFactors) {
-      const riskAnalysis = this.riskService.calculateRiskScore(request.riskFactors);
+    if (request.riskFactors || identity.ip || identity.userAgent) {
+      const riskAnalysis = this.riskService.calculateRiskScore({ ...request.riskFactors, ip: identity.ip, userAgent: identity.userAgent });
       riskScore = riskAnalysis.score;
       riskLevel = riskAnalysis.level;
     }
@@ -132,6 +142,26 @@ export class VerificationService {
         Math.round(confidence),
         riskLevel
       );
+    }
+
+    try {
+      await this.analyticsService.recordVerification({
+        challengeId: challenge.id,
+        challengeType: challenge.type,
+        difficulty: challenge.difficulty,
+        success: isCorrect && confidence > 50,
+        timeTaken: request.timeTaken,
+        riskScore,
+        riskLevel,
+        confidence: Math.round(confidence),
+        intelligenceScore: Math.round(intelligenceScore),
+        behaviorData: request.behaviorData,
+        ip: identity.ip,
+        userAgent: identity.userAgent,
+      });
+    } catch (error) {
+      // Do not turn a completed, consumed challenge into a false failure.
+      this.logger.error('Could not record verification analytics', error instanceof Error ? error.stack : String(error));
     }
 
     return {

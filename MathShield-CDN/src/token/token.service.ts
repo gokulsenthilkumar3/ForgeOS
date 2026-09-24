@@ -1,7 +1,9 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
-import { createHmac, randomBytes } from 'crypto';
+import { createHmac, randomBytes, timingSafeEqual } from 'crypto';
+
+export const CHALLENGE_TTL_MS = 600_000;
 
 export interface VerificationToken {
   token: string;
@@ -124,14 +126,17 @@ export class TokenService {
     difficulty: string,
     signature: string,
   ): boolean {
-    // Check current and previous minute signatures (for time drift)
+    // The challenge remains cached for ten minutes. Include the boundary minute
+    // because a challenge created at :59 can still be live ten minutes later.
+    if (!/^[a-f0-9]{64}$/i.test(signature)) return false;
+    const provided = Buffer.from(signature, 'hex');
     const now = Math.floor(Date.now() / 1000 / 60);
-    
-    for (let minute = now; minute >= now - 1; minute--) {
+
+    for (let minute = now; minute >= now - Math.ceil(CHALLENGE_TTL_MS / 60_000); minute--) {
       const data = `${challengeId}:${challengeType}:${difficulty}:${minute}`;
-      const expectedSignature = createHmac('sha256', this.secret).update(data).digest('hex');
-      
-      if (signature === expectedSignature) {
+      const expectedSignature = createHmac('sha256', this.secret).update(data).digest();
+
+      if (timingSafeEqual(provided, expectedSignature)) {
         return true;
       }
     }

@@ -8,6 +8,14 @@ import helmet from 'helmet';
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
 
+  // Compose places one ForgeOS web proxy in front of this private service.
+  // Standalone deployments default to no trusted proxy hops.
+  const trustedProxyHops = Number(process.env.TRUST_PROXY_HOPS || 0);
+  if (!Number.isInteger(trustedProxyHops) || trustedProxyHops < 0 || trustedProxyHops > 2) {
+    throw new Error('TRUST_PROXY_HOPS must be an integer from 0 to 2');
+  }
+  app.set('trust proxy', trustedProxyHops);
+
   // Security middleware (disable CSP in dev so static pages load properly)
   app.use(
     helmet({

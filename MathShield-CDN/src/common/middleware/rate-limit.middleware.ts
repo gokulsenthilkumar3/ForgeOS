@@ -20,14 +20,13 @@ export class RateLimitMiddleware implements NestMiddleware {
       parseInt(this.configService.get('RATE_LIMIT_MAX_REQUESTS')) || 100;
 
     // Periodic cleanup every 5 minutes
-    setInterval(() => this.cleanup(), 5 * 60 * 1000);
+    setInterval(() => this.cleanup(), 5 * 60 * 1000).unref();
   }
 
   use(req: Request, res: Response, next: NextFunction): void {
-    const ip =
-      (req.headers['x-forwarded-for'] as string)?.split(',')[0].trim() ||
-      req.ip ||
-      'unknown';
+    // Express resolves req.ip using the configured, bounded trusted proxy hop.
+    // Never read X-Forwarded-For directly: clients can prepend arbitrary IPs.
+    const ip = req.ip || req.socket.remoteAddress || 'unknown';
 
     const now = Date.now();
     const entry = this.store.get(ip);

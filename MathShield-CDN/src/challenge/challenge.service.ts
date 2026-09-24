@@ -2,7 +2,7 @@ import { Injectable, Inject } from '@nestjs/common';
 import { v4 as uuidv4 } from 'uuid';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Cache } from 'cache-manager';
-import { TokenService } from '../token/token.service';
+import { CHALLENGE_TTL_MS, TokenService } from '../token/token.service';
 import {
   generatePatternChallenge,
   generateSpatialChallenge,
@@ -54,7 +54,7 @@ export class ChallengeService {
     const challenge = this.createChallengeByType(type, difficulty, finalUseAIResistant);
     
     // Cache challenge for 10 minutes (600 seconds)
-    await this.cacheManager.set(`challenge:${challenge.id}`, challenge, 600000);
+    await this.cacheManager.set(`challenge:${challenge.id}`, challenge, CHALLENGE_TTL_MS);
     
     return challenge;
   }

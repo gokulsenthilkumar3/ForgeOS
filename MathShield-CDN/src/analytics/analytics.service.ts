@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { MoreThanOrEqual, Repository } from 'typeorm';
 import { VerificationEntity } from '../entities/verification.entity';
 
 export interface AnalyticsData {
@@ -42,6 +42,8 @@ export class AnalyticsService {
   ) {}
 
   async recordVerification(data: {
+    challengeId: string;
+    difficulty: string;
     success: boolean;
     timeTaken: number;
     riskScore: number;
@@ -55,9 +57,9 @@ export class AnalyticsService {
   }): Promise<void> {
     const verification = this.verificationRepository.create({
       ...data,
-      challengeId: 'temp', // Will be updated in actual implementation
+      challengeId: data.challengeId,
       challengeType: data.challengeType,
-      difficulty: 'medium', // Default
+      difficulty: data.difficulty,
       confidence: data.confidence || 0,
       intelligenceScore: data.intelligenceScore || 0,
       riskLevel: data.riskLevel || 'low',
@@ -83,7 +85,7 @@ export class AnalyticsService {
     const averageSolveTime = parseFloat(avgTimeResult.avg) || 0;
     
     // Calculate bot traffic percentage (high risk scores)
-    const highRiskCount = await this.verificationRepository.count({ where: { riskScore: 70 } });
+    const highRiskCount = await this.verificationRepository.count({ where: { riskScore: MoreThanOrEqual(70) } });
     const botTrafficPercentage = (highRiskCount / totalVerifications) * 100;
 
     // Risk distribution
@@ -116,23 +118,23 @@ export class AnalyticsService {
   }
 
   async getTimeSeriesData(hours: number = 24): Promise<TimeSeriesData[]> {
+    const bucketCount = Number.isFinite(hours) ? Math.min(168, Math.max(1, Math.trunc(hours))) : 24;
     const now = new Date();
-    const cutoff = new Date(now.getTime() - hours * 60 * 60 * 1000);
+    const currentHour = Math.floor(now.getTime() / 3_600_000) * 3_600_000;
+    const cutoff = new Date(currentHour - (bucketCount - 1) * 3_600_000);
     
     const recentVerifications = await this.verificationRepository
       .createQueryBuilder('verification')
       .where('verification.createdAt >= :cutoff', { cutoff })
       .getMany();
     
-    // Group by hour
+    // Use absolute UTC-hour timestamps, not hour-of-day (which collides across days).
     const hourlyData = new Map<number, TimeSeriesData>();
-    
-    for (let i = 0; i < hours; i++) {
-      const hourTimestamp = new Date(now.getTime() - i * 60 * 60 * 1000);
-      const hourKey = hourTimestamp.getHours();
-      
+
+    for (let i = 0; i < bucketCount; i++) {
+      const hourKey = cutoff.getTime() + i * 3_600_000;
       hourlyData.set(hourKey, {
-        timestamp: hourTimestamp,
+        timestamp: new Date(hourKey),
         verifications: 0,
         successes: 0,
         failures: 0,
@@ -141,10 +143,12 @@ export class AnalyticsService {
     }
 
     recentVerifications.forEach(verification => {
-      const hourKey = verification.createdAt.getHours();
+      const hourKey = Math.floor(verification.createdAt.getTime() / 3_600_000) * 3_600_000;
       const hourData = hourlyData.get(hourKey);
-      
+
       if (hourData) {
+        const oldCount = hourData.verifications;
+        hourData.averageTime = (hourData.averageTime * oldCount + verification.timeTaken) / (oldCount + 1);
         hourData.verifications++;
         if (verification.success) {
           hourData.successes++;
@@ -154,18 +158,7 @@ export class AnalyticsService {
       }
     });
 
-    // Calculate average times per hour
-    hourlyData.forEach(hourData => {
-      const hourVerifications = recentVerifications.filter(v => 
-        v.createdAt.getHours() === hourData.timestamp.getHours()
-      );
-      
-      if (hourVerifications.length > 0) {
-        hourData.averageTime = hourVerifications.reduce((sum, v) => sum + v.timeTaken, 0) / hourVerifications.length;
-      }
-    });
-
-    return Array.from(hourlyData.values()).reverse();
+    return Array.from(hourlyData.values());
   }
 
   private getEmptyAnalytics(): AnalyticsData {

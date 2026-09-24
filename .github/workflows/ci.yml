@@ -26,6 +26,10 @@ jobs:
         working-directory: ForgeOS
       - run: pnpm build
         working-directory: ForgeOS
+      - name: Install PulseWatch backend dependencies
+        run: npm ci --prefix PulseWatch/PulseWatch/backend --ignore-scripts --no-audit --no-fund
+      - name: Test PulseWatch workspace isolation
+        run: npm test --prefix PulseWatch/PulseWatch/backend
 
   single-port-smoke:
     runs-on: ubuntu-latest
@@ -44,12 +48,14 @@ jobs:
             echo "$key=$value" >> "$GITHUB_ENV"
           done
           echo 'FORGEOS_PUBLIC_PORT=3000' >> "$GITHUB_ENV"
+          # The official Quay image is pinned for disposable CI storage only.
+          echo 'FORGEOS_MINIO_IMAGE=quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z' >> "$GITHUB_ENV"
       - name: Start private services and one public web port
         run: docker compose -f ForgeOS/docker-compose.yml --project-directory ForgeOS up -d --build
       - name: Assert only port 3000 is published
         run: |
           docker compose -f ForgeOS/docker-compose.yml --project-directory ForgeOS ps --format json \
-            | jq -s -e '([.[] | .Publishers[]? | select(.PublishedPort > 0) | .PublishedPort] | unique) == [3000]'
+            | jq -s -e '([.. | objects | .PublishedPort? // empty | select(. > 0)] | unique) == [3000]'
       - name: Check authenticated routes and all modules
         run: node ForgeOS/scripts/smoke.mjs
       - name: Show service status on failure
