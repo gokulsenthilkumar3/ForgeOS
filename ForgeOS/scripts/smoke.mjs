@@ -1,8 +1,11 @@
 import assert from 'node:assert/strict';
+import { createHmac } from 'node:crypto';
 
 const origin = process.env.FORGEOS_SMOKE_ORIGIN || 'http://localhost:3000';
 const password = process.env.FORGEOS_ADMIN_PASSWORD;
+const secret = process.env.FORGEOS_SESSION_SECRET;
 assert(password, 'FORGEOS_ADMIN_PASSWORD is required for smoke test');
+assert(secret && secret.length >= 32, 'FORGEOS_SESSION_SECRET is required for smoke test');
 
 async function request(path, options = {}) {
   const response = await fetch(new URL(path, origin), { redirect: 'manual', signal: AbortSignal.timeout(15000), ...options });
@@ -31,15 +34,41 @@ for (let attempt = 0; attempt < 90; attempt++) {
 }
 assert(ready, 'ForgeOS web did not become ready');
 
+await waitFor('/api/v1/health');
 await expectStatus('/api/v1/overview', 401);
+const setupStatus = await (await request('/api/v1/auth/setup')).json();
+const email = process.env.FORGEOS_SMOKE_EMAIL || 'forgeos-smoke@example.test';
+const accountPassword = process.env.FORGEOS_SMOKE_PASSWORD || password;
+let ownerId = process.env.FORGEOS_SMOKE_USER_ID;
+if (setupStatus.ownerRequired) {
+  const setup = await request('/api/v1/auth/setup', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ email, password: accountPassword, bootstrapPassword: password }),
+  });
+  ownerId = (await setup.json()).userId;
+}
+assert(ownerId, 'Existing installations require FORGEOS_SMOKE_USER_ID; CI creates a temporary owner');
 await expectStatus('/api/session', 401, {
-  method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ password: `${password}-invalid` }),
+  method: 'POST', headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({ action: 'password', email, password: `${accountPassword}-invalid` }),
 });
 
-const login = await request('/api/session', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ password }) });
-const cookie = login.headers.get('set-cookie')?.split(';', 1)[0];
-assert(cookie?.startsWith('forgeos_session='), 'Login did not establish a ForgeOS session');
-const auth = { cookie };
+const enrollmentLogin = await request('/api/session', {
+  method: 'POST', headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({ action: 'password', email, password: accountPassword }),
+});
+const enrollmentCookie = enrollmentLogin.headers.get('set-cookie')?.split(';', 1)[0];
+assert(enrollmentCookie?.startsWith('forgeos_session=u.'), 'Password must issue enrollment-only session');
+await expectStatus('/api/v1/overview', 403, { headers: { cookie: enrollmentCookie } });
+await expectStatus('/', 307, { headers: { cookie: enrollmentCookie } });
+
+// This CI fixture has the test-only signing secret, so it can exercise routing
+// behind a key-authenticated session. It does not substitute for a real FIDO2
+// ceremony; WebAuthn verification is covered by API tests and physical-key QA.
+const authAt = String(Date.now());
+const expires = String(Date.now() + 10 * 60_000);
+const signature = createHmac('sha256', secret).update(`webauthn:${ownerId}:${authAt}:${expires}`).digest('hex');
+const auth = { cookie: `forgeos_session=w.${ownerId}.${authAt}.${expires}.${signature}` };
 
 const overviewResponse = await waitFor('/api/v1/overview', { headers: auth });
 const overview = await overviewResponse.json();
@@ -51,6 +80,7 @@ await expectStatus('/api/v1/overview', 401, { headers: { cookie: 'forgeos_sessio
 await request('/', { headers: auth });
 await request('/api/v1/health', { headers: auth });
 await request('/api/v1/workspaces', { headers: auth });
+await expectStatus(`/api/v1/agent-access/projects?workspaceId=${overview.workspace.id}`, 401);
 await waitFor('/api/pulsewatch/endpoints', { headers: auth });
 await waitFor('/shield.js');
 for (const id of overview.workspace.moduleIds) {
@@ -60,4 +90,4 @@ for (const id of overview.workspace.moduleIds) {
   assert(Array.isArray(await records.json()), `${id} records did not return a list`);
 }
 
-console.log(`ForgeOS smoke passed: one origin, ${overview.workspace.moduleIds.length} module pages and record APIs, protected routes, PulseWatch, and MathShield widget`);
+console.log(`ForgeOS smoke passed: one origin, ${overview.workspace.moduleIds.length} module pages, password-only denial, signed-agent denial, PulseWatch, and MathShield widget. Physical-key ceremony needs a real trusted key.`);

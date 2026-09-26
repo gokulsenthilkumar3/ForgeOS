@@ -1,5 +1,6 @@
 import { BadRequestException, Body, Controller, Get, Param, Patch, Post, Query, Req } from '@nestjs/common';
-import { IsArray, IsBoolean, IsEmail, IsIn, IsObject, IsString, Length } from 'class-validator';
+import { IsArray, IsBoolean, IsEmail, IsIn, IsObject, IsOptional, IsString, IsUUID, Length } from 'class-validator';
+import type { AuthenticationResponseJSON, RegistrationResponseJSON } from '@simplewebauthn/server';
 import { modules, type ModuleId } from '@forgeos/contracts';
 import { PlatformService, type AuthActor } from './platform.service';
 
@@ -9,6 +10,21 @@ class LoginInput { @IsEmail() email!: string; @IsString() password!: string; }
 class InvitationInput { @IsEmail() email!: string; @IsIn(['admin', 'member', 'auditor']) role!: 'admin' | 'member' | 'auditor'; }
 class AcceptInvitationInput { @IsString() token!: string; @IsString() password!: string; }
 class RoleInput { @IsIn(['owner', 'admin', 'member', 'auditor']) role!: 'owner' | 'admin' | 'member' | 'auditor'; }
+class WebAuthnRegisterOptionsInput {
+  @IsString() @Length(1, 80) label!: string;
+  @IsOptional() @IsString() migrationPassword?: string;
+}
+class WebAuthnRegisterVerifyInput {
+  @IsUUID() challengeId!: string;
+  @IsObject() response!: RegistrationResponseJSON;
+  @IsOptional() @IsUUID() approvalId?: string;
+}
+class WebAuthnAuthenticateOptionsInput { @IsEmail() email!: string; }
+class WebAuthnAuthenticateVerifyInput { @IsUUID() challengeId!: string; @IsObject() response!: AuthenticationResponseJSON; }
+class WebAuthnStepUpOptionsInput {
+  @IsIn(['agent.register', 'agent.grant', 'policy.update', 'audit.export', 'webauthn.enroll']) action!: string;
+  @IsOptional() @IsUUID() workspaceId?: string;
+}
 
 class WorkspaceInput { @IsString() @Length(1, 100) name!: string; }
 class ProjectInput { @IsString() @Length(1, 100) name!: string; @IsArray() @IsIn(modules.map(module => module.id), { each: true }) moduleIds!: ModuleId[]; }
@@ -26,6 +42,25 @@ export class PlatformController {
   @Post('auth/login') login(@Body() input: LoginInput) { return this.platform.loginUser(input.email, input.password); }
   @Post('auth/accept-invite') acceptInvite(@Body() input: AcceptInvitationInput) { return this.platform.acceptInvitation(input.token, input.password); }
   @Get('auth/session') session(@Req() request: AuthRequest) { return request.forgeosAuth; }
+  @Get('auth/webauthn/credentials') credentials(@Req() request: AuthRequest) { return this.platform.listWebAuthnCredentials(request.forgeosAuth); }
+  @Post('auth/webauthn/register/options') registrationOptions(@Body() input: WebAuthnRegisterOptionsInput, @Req() request: AuthRequest) {
+    return this.platform.webAuthnRegistrationOptions(request.forgeosAuth, input.label, input.migrationPassword);
+  }
+  @Post('auth/webauthn/register/verify') registrationVerify(@Body() input: WebAuthnRegisterVerifyInput, @Req() request: AuthRequest) {
+    return this.platform.verifyWebAuthnRegistration(request.forgeosAuth, input.challengeId, input.response, input.approvalId);
+  }
+  @Post('auth/webauthn/authenticate/options') authenticationOptions(@Body() input: WebAuthnAuthenticateOptionsInput) {
+    return this.platform.webAuthnAuthenticationOptions(input.email);
+  }
+  @Post('auth/webauthn/authenticate/verify') authenticationVerify(@Body() input: WebAuthnAuthenticateVerifyInput) {
+    return this.platform.verifyWebAuthnAuthentication(input.challengeId, input.response);
+  }
+  @Post('auth/webauthn/step-up/options') stepUpOptions(@Body() input: WebAuthnStepUpOptionsInput, @Req() request: AuthRequest) {
+    return this.platform.webAuthnStepUpOptions(request.forgeosAuth, input.action, input.workspaceId);
+  }
+  @Post('auth/webauthn/step-up/verify') stepUpVerify(@Body() input: WebAuthnAuthenticateVerifyInput, @Req() request: AuthRequest) {
+    return this.platform.verifyWebAuthnStepUp(request.forgeosAuth, input.challengeId, input.response);
+  }
   @Get('modules') listModules() { return modules; }
   @Get('workspaces') workspaces(@Req() request: AuthRequest) { return this.platform.listWorkspaces(request.forgeosAuth); }
   @Post('workspaces') workspace(@Body() input: WorkspaceInput, @Req() request: AuthRequest) { return this.platform.createWorkspace(input.name, request.forgeosAuth); }

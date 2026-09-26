@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { modules, type AuditEvent, type ModuleId, type Project, type Run, type Workspace } from '@forgeos/contracts';
 import { ModuleGate } from './modules/[id]/module-gate';
+import { AgentAccessPanel } from './agent-access';
 
 type Overview = { workspace: Workspace; projects: Project[]; runs: Run[]; audit: AuditEvent[] };
 type Dialog = 'workspace' | 'project' | 'modules' | null;
@@ -41,7 +42,7 @@ function useOverview() {
   return { overview, setOverview, workspaces, setWorkspaces, workspaceId, loading, error, setError, refresh };
 }
 
-export function ConsoleShell({ moduleId }: { moduleId?: ModuleId }) {
+export function ConsoleShell({ moduleId, section }: { moduleId?: ModuleId; section?: 'agents' }) {
   const data = useOverview();
   const { overview, setOverview, workspaces, setWorkspaces, workspaceId, loading, error, setError, refresh } = data;
   const [dialog, setDialog] = useState<Dialog>(null);
@@ -113,14 +114,14 @@ export function ConsoleShell({ moduleId }: { moduleId?: ModuleId }) {
     <aside className="console-sidebar" aria-label="Main navigation">
       <a className="console-brand" href="/"><span className="brand-mark">F</span><span>ForgeOS<small>ENGINEERING CONSOLE</small></span></a>
       <div className="workspace-switcher"><label htmlFor="workspace-select">WORKSPACE</label><select id="workspace-select" value={workspaceId} onChange={event => void refresh(event.target.value)}>{workspaces.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select><button onClick={() => openDialog('workspace')}>+ Create workspace</button></div>
-      <nav className="primary-nav"><a className={!moduleId ? 'current' : ''} href="/">Overview</a><a href="/#projects">Projects</a><a href="/#activity">Activity</a></nav>
+      <nav className="primary-nav"><a className={!moduleId && !section ? 'current' : ''} href="/">Overview</a><a href="/#projects">Projects</a><a href="/#activity">Activity</a><a className={section === 'agents' ? 'current' : ''} href="/settings/agents">Automation access</a></nav>
       <div className="sidebar-divider">TOOLS <span>{loading && !overview ? '…' : enabledModules.length}</span></div>
       <nav className="module-nav" aria-label="Enabled tools">{loading && !overview ? <p className="nav-message" role="status">Loading workspace tools…</p> : error && !overview ? <p className="nav-message" role="alert">Tools unavailable. Check the workspace connection and retry.</p> : !enabledModules.length ? <p className="nav-message">No tools enabled in this workspace. Use Manage modules to turn them on.</p> : groups.map(group => { const items = enabledModules.filter(item => item.category === group); return items.length ? <div className="nav-group" key={group}><p>{group}</p>{items.map(item => <a key={item.id} className={moduleId === item.id ? 'current' : ''} href={`/modules/${item.id}`}>{item.name}</a>)}</div> : null; })}</nav>
       <div className="sidebar-footer"><button onClick={() => openDialog('modules')}>Manage modules</button><span>{overview?.workspace.plan ?? 'Connecting'}</span></div>
     </aside>
-    <div className="console-main"><div className="console-topbar"><div className="breadcrumb"><a href="/">ForgeOS</a><span>/</span><span>{currentModule?.name ?? 'Overview'}</span></div><div className="topbar-actions"><button className="search-trigger" onClick={() => setPalette(true)} aria-keyshortcuts="Control+K Meta+K"><span>Search tools, projects, activity</span><kbd>Ctrl K</kbd></button><button className="text-button" onClick={() => void refresh(workspaceId)} disabled={loading}>Refresh</button><button className="text-button" onClick={() => void fetch('/api/session', { method: 'DELETE' }).then(() => window.location.assign('/login'))}>Sign out</button></div></div>
+    <div className="console-main"><div className="console-topbar"><div className="breadcrumb"><a href="/">ForgeOS</a><span>/</span><span>{currentModule?.name ?? (section === 'agents' ? 'Automation access' : 'Overview')}</span></div><div className="topbar-actions"><button className="search-trigger" onClick={() => setPalette(true)} aria-keyshortcuts="Control+K Meta+K"><span>Search tools, projects, activity</span><kbd>Ctrl K</kbd></button><button className="text-button" onClick={() => void refresh(workspaceId)} disabled={loading}>Refresh</button><button className="text-button" onClick={() => void fetch('/api/session', { method: 'DELETE' }).then(() => window.location.assign('/login'))}>Sign out</button></div></div>
       <main className="console-content">{error && <div className="inline-error" role="alert">{error}<button onClick={() => void refresh(workspaceId)}>Retry</button></div>}
-        {currentModule ? <><div className="page-heading"><div><p className="eyebrow">{currentModule.category} / TOOL</p><h1>{currentModule.name}</h1><p className="page-subtitle">{currentModule.description}</p></div><a className="quiet-link" href="/">All tools</a></div><div className="workbench-panel"><ModuleGate key={workspaceId} id={currentModule.id} /></div></> : <Dashboard overview={overview} loading={loading} enabledModules={enabledModules} onCreateProject={() => openDialog('project')} onManage={() => openDialog('modules')} onSearch={() => setPalette(true)} />}
+        {section === 'agents' ? <AgentAccessPanel workspaceId={workspaceId} role={(overview?.workspace as Workspace & { role?: string } | undefined)?.role} /> : currentModule ? <><div className="page-heading"><div><p className="eyebrow">{currentModule.category} / TOOL</p><h1>{currentModule.name}</h1><p className="page-subtitle">{currentModule.description}</p></div><a className="quiet-link" href="/">All tools</a></div><div className="workbench-panel"><ModuleGate key={workspaceId} id={currentModule.id} /></div></> : <Dashboard overview={overview} loading={loading} enabledModules={enabledModules} onCreateProject={() => openDialog('project')} onManage={() => openDialog('modules')} onSearch={() => setPalette(true)} />}
       </main>
     </div>
     {palette && <div className="overlay" onMouseDown={() => setPalette(false)}><div className="command-dialog" role="dialog" aria-modal="true" aria-label="Search ForgeOS" onMouseDown={event => event.stopPropagation()}><div className="command-input"><span>⌕</span><input ref={searchRef} value={query} onChange={event => setQuery(event.target.value)} placeholder="Search tools, projects, and activity" aria-label="Search ForgeOS" /><kbd>Esc</kbd></div><div className="command-results">{!query.trim() ? <p>Search this workspace. Press Ctrl+K to open from anywhere.</p> : results.length ? results.map((item, index) => <a key={`${item.href}-${index}`} href={item.href}><span>{item.label}</span><small>{item.meta}</small></a>) : <p>No matching items in this workspace.</p>}</div></div></div>}
