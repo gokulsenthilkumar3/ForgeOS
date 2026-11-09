@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, NotImplementedException, OnModuleDestroy, OnModuleInit, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, HttpException, HttpStatus, Injectable, NotFoundException, NotImplementedException, OnModuleDestroy, OnModuleInit, UnauthorizedException } from '@nestjs/common';
 import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -11,6 +11,7 @@ import {
 import { modules, type ModuleId, type Role } from '@forgeos/contracts';
 import { hashPassword, verifyPassword } from './password';
 import { requireHardwarePolicy, verifyHardwareAttestation, webAuthnConfig } from './webauthn-policy';
+import { AuthenticationThrottle } from './authentication-throttle';
 
 export type AuthActor = { kind: 'bootstrap' } | { kind: 'user'; userId: string; email: string };
 type MemberRole = Extract<Role, 'owner' | 'admin' | 'member' | 'auditor'>;
@@ -51,6 +52,25 @@ function canonicalJson(value: unknown): string {
 @Injectable()
 export class PlatformService implements OnModuleInit, OnModuleDestroy {
   private readonly pool = new Pool({ connectionString: process.env.DATABASE_URL });
+  private readonly authenticationThrottle = new AuthenticationThrottle();
+
+  private authenticationKey(scope: string, identity: string) {
+    return `${scope}:${createHash('sha256').update(identity).digest('hex')}`;
+  }
+
+  private assertAuthenticationAllowed(key: string) {
+    const retryAfter = this.authenticationThrottle.check(key);
+    if (retryAfter !== undefined) {
+      throw new HttpException({ message: 'Too many authentication attempts. Try again later.', retryAfterSeconds: retryAfter }, HttpStatus.TOO_MANY_REQUESTS);
+    }
+  }
+
+  private recordAuthenticationAttempt(key: string) {
+    const retryAfter = this.authenticationThrottle.record(key);
+    if (retryAfter !== undefined) {
+      throw new HttpException({ message: 'Too many authentication attempts. Try again later.', retryAfterSeconds: retryAfter }, HttpStatus.TOO_MANY_REQUESTS);
+    }
+  }
 
   async onModuleInit() {
     if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL is required for ForgeOS API');
@@ -198,9 +218,14 @@ export class PlatformService implements OnModuleInit, OnModuleDestroy {
     const configured = process.env.FORGEOS_ADMIN_PASSWORD;
     const secret = process.env.FORGEOS_SESSION_SECRET;
     if (!configured || !secret || secret.length < 32) throw new UnauthorizedException('Owner setup is not configured');
+    const throttleKey = this.authenticationKey('owner-setup', 'bootstrap');
+    this.assertAuthenticationAllowed(throttleKey);
     const actual = createHmac('sha256', secret).update(bootstrapPassword).digest();
     const expected = createHmac('sha256', secret).update(configured).digest();
-    if (!timingSafeEqual(actual, expected)) throw new UnauthorizedException('Invalid bootstrap password');
+    if (!timingSafeEqual(actual, expected)) {
+      this.recordAuthenticationAttempt(throttleKey);
+      throw new UnauthorizedException('Invalid bootstrap password');
+    }
     const passwordHash = await hashPassword(password);
     const client = await this.pool.connect();
     try {
@@ -212,6 +237,7 @@ export class PlatformService implements OnModuleInit, OnModuleDestroy {
       await client.query(`INSERT INTO principals(workspace_id,user_id,email,role,kind)
         SELECT id,$1,$2,'owner','user' FROM workspaces`, [user.rows[0].id, email]);
       await client.query('COMMIT');
+      this.authenticationThrottle.reset(throttleKey);
       return { userId: user.rows[0].id, email };
     } catch (error) { await client.query('ROLLBACK'); throw error; }
     finally { client.release(); }
@@ -219,13 +245,24 @@ export class PlatformService implements OnModuleInit, OnModuleDestroy {
 
   async loginUser(rawEmail: string, password: string) {
     const email = normalizeEmail(rawEmail);
-    const result = validEmail(email) ? await this.pool.query('SELECT id,email,password_hash FROM users WHERE email = $1', [email]) : { rows: [] };
-    if (!result.rows[0]) {
-      await hashPassword(password);
-      throw new UnauthorizedException('Invalid credentials');
+    const throttleKey = this.authenticationKey('password-login', email);
+    const reservation = this.authenticationThrottle.reserve(throttleKey);
+    if (!reservation) this.assertAuthenticationAllowed(throttleKey);
+    let succeeded = false;
+    try {
+      const result = validEmail(email) ? await this.pool.query('SELECT id,email,password_hash FROM users WHERE email = $1', [email]) : { rows: [] };
+      if (!result.rows[0]) {
+        await hashPassword(password);
+        throw new UnauthorizedException('Invalid credentials');
+      }
+      if (!await verifyPassword(password, result.rows[0].password_hash)) {
+        throw new UnauthorizedException('Invalid credentials');
+      }
+      succeeded = true;
+      return { userId: result.rows[0].id, email: result.rows[0].email };
+    } finally {
+      this.authenticationThrottle.complete(throttleKey, reservation!, succeeded);
     }
-    if (!await verifyPassword(password, result.rows[0].password_hash)) throw new UnauthorizedException('Invalid credentials');
-    return { userId: result.rows[0].id, email: result.rows[0].email };
   }
 
   private requireUser(actor: AuthActor): Extract<AuthActor, { kind: 'user' }> {
@@ -348,6 +385,7 @@ export class PlatformService implements OnModuleInit, OnModuleDestroy {
   async webAuthnAuthenticationOptions(rawEmail: string) {
     const config = webAuthnConfig();
     const email = normalizeEmail(rawEmail);
+    this.recordAuthenticationAttempt(this.authenticationKey('webauthn-options', email));
     const user = validEmail(email)
       ? await this.pool.query('SELECT id FROM users WHERE email = $1', [email])
       : { rows: [] };
@@ -420,6 +458,7 @@ export class PlatformService implements OnModuleInit, OnModuleDestroy {
   async verifyWebAuthnAuthentication(challengeId: string, response: AuthenticationResponseJSON) {
     const challenge = await this.claimWebAuthnChallenge(challengeId, 'authenticate');
     const user = await this.verifyWebAuthnAssertion(challenge, response);
+    this.authenticationThrottle.reset(this.authenticationKey('webauthn-options', user.email));
     return { userId: user.userId, email: user.email, authenticatedAt: Date.now(), method: 'webauthn' as const };
   }
 
