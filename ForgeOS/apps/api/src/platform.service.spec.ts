@@ -1,4 +1,4 @@
-import { NotFoundException } from '@nestjs/common';
+import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { PlatformService } from './platform.service';
 
 describe('PlatformService workspace boundaries', () => {
@@ -38,5 +38,16 @@ describe('PlatformService workspace boundaries', () => {
       .mockResolvedValue({ rows: [] });
     await service.listModuleRecords('commitcraft', workspace.id, actor);
     expect(query).toHaveBeenCalledWith(expect.stringContaining('workspace_id = $1 AND module_id = $2'), [workspace.id, 'commitcraft']);
+  });
+
+  it('keeps auditors read-only for project, run, and module-record mutations', async () => {
+    jest.spyOn(service as never, 'workspace' as never).mockRestore();
+    const query = jest.spyOn((service as unknown as { pool: { query: (...args: unknown[]) => Promise<unknown> } }).pool, 'query')
+      .mockResolvedValue({ rows: [{ ...workspace, role: 'auditor' }] });
+
+    await expect(service.createProject('QA', ['commitcraft'], workspace.id, actor)).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(service.startRun('project-1', 'commitcraft', workspace.id, actor)).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(service.saveModuleRecord('commitcraft', 'prompt', 'draft', {}, workspace.id, actor)).rejects.toBeInstanceOf(ForbiddenException);
+    expect(query).toHaveBeenCalledTimes(3);
   });
 });
