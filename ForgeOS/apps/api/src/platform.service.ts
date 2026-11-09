@@ -246,19 +246,23 @@ export class PlatformService implements OnModuleInit, OnModuleDestroy {
   async loginUser(rawEmail: string, password: string) {
     const email = normalizeEmail(rawEmail);
     const throttleKey = this.authenticationKey('password-login', email);
-    this.assertAuthenticationAllowed(throttleKey);
-    const result = validEmail(email) ? await this.pool.query('SELECT id,email,password_hash FROM users WHERE email = $1', [email]) : { rows: [] };
-    if (!result.rows[0]) {
-      await hashPassword(password);
-      this.recordAuthenticationAttempt(throttleKey);
-      throw new UnauthorizedException('Invalid credentials');
+    const reservation = this.authenticationThrottle.reserve(throttleKey);
+    if (!reservation) this.assertAuthenticationAllowed(throttleKey);
+    let succeeded = false;
+    try {
+      const result = validEmail(email) ? await this.pool.query('SELECT id,email,password_hash FROM users WHERE email = $1', [email]) : { rows: [] };
+      if (!result.rows[0]) {
+        await hashPassword(password);
+        throw new UnauthorizedException('Invalid credentials');
+      }
+      if (!await verifyPassword(password, result.rows[0].password_hash)) {
+        throw new UnauthorizedException('Invalid credentials');
+      }
+      succeeded = true;
+      return { userId: result.rows[0].id, email: result.rows[0].email };
+    } finally {
+      this.authenticationThrottle.complete(throttleKey, reservation!, succeeded);
     }
-    if (!await verifyPassword(password, result.rows[0].password_hash)) {
-      this.recordAuthenticationAttempt(throttleKey);
-      throw new UnauthorizedException('Invalid credentials');
-    }
-    this.authenticationThrottle.reset(throttleKey);
-    return { userId: result.rows[0].id, email: result.rows[0].email };
   }
 
   private requireUser(actor: AuthActor): Extract<AuthActor, { kind: 'user' }> {

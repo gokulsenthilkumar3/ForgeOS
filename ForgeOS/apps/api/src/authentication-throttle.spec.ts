@@ -19,4 +19,19 @@ describe('AuthenticationThrottle', () => {
     throttle.reset('second');
     expect(throttle.check('second', 200)).toBeUndefined();
   });
+
+  it('reserves concurrent attempts and only clears failures that predate a successful reservation', () => {
+    const throttle = new AuthenticationThrottle(3, 1_000);
+    throttle.record('account', 100);
+    const successfulAttempt = throttle.reserve('account', 200)!;
+    const concurrentAttempt = throttle.reserve('account', 200)!;
+
+    throttle.complete('account', successfulAttempt, true, 300);
+    expect(throttle.reserve('account', 300)).toBeDefined();
+    expect(throttle.reserve('account', 300)).toBeDefined();
+    expect(throttle.reserve('account', 300)).toBeUndefined();
+
+    throttle.complete('account', concurrentAttempt, false, 400);
+    expect(throttle.check('account', 400)).toBe(1);
+  });
 });
