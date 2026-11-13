@@ -19,10 +19,13 @@ The table distinguishes what works in the shared UI today from the source featur
 | PromptVault | Workspace-persisted versions, browser backup/import, and model runner (API listing verified; browser save/import pending) | Team collections, branches, A/B tests, standalone data import, and complete live workflow verification |
 | ProbeAI | Exact-match cases and model calls | YAML suites, evaluator catalog, batch/regression history |
 | PulseWatch | Monitor CRUD, checks, incidents, persistent service state | Status page, notification channels and workspace-level permissions |
-| DBPulse | ForgeOS audit event filter and CSV export | External database connectors, row/schema diff, policies, retention |
+| DBPulse | PostgreSQL and MySQL/MariaDB connections, table/column discovery, bounded keyed row/cell diff, schema mapping and JSON export | Additional engines, full-database traversal, isolated connector workers and shared snapshots |
 | GLBViewer | Local GLB playback, rotation and PNG capture | Persistent uploads, share links, embeds, lighting and morph controls |
 | CraftCV | Basic edit, preview and print/PDF | Multiple templates, autosave, schema import |
 | VaultIQ | Browser encrypted entries and generator | Security scoring, secure sharing, account sync |
 | MathShield | Challenge, verification and widget on ForgeOS origin | Shared workspace analytics and configuration UI |
+| AgentShield | Separate policy module, saved administrator drafts, local decision preview, protocol inventory | Edge delivery, sandbox runtime enforcement, A2A/MCP adapters, live budgets and cache metrics; see AGENTSHIELD.md |
 
 Platform tasks still open: worker dispatch and status updates; persistent artifacts and short-lived URLs; RBAC, SSO, service accounts and tenant isolation; full audit coverage; connector secret management; cloud/Kubernetes deployment parity; cross-module search and notifications; end-to-end tests for all source workflows.
+
+2026-11-14 workbench slice: CommitCraft local VSIX and native VS Code development-host checks; StackForge code-first explorer/evidence UI; bounded worker-based SnapDiff local review/export; AgentShield display name separated from managed CDN while preserving IDs/drafts. See PRODUCT-CATALOG.md and PRODUCT-ROADMAP.md for proposed products and completion gates.
