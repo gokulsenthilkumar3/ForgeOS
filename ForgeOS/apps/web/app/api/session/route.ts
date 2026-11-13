@@ -52,8 +52,9 @@ export async function POST(request: NextRequest) {
       if (!response.ok || typeof data.userId !== 'string') {
         return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
       }
-      const signature = createHmac('sha256', secret).update(`user:${data.userId}:${expires}`).digest('hex');
-      return setSession(NextResponse.json({ ok: true, enrollmentOnly: true }), `u.${data.userId}.${expires}.${signature}`, request);
+      const passwordLogin = process.env.FORGEOS_AUTH_MODE === 'password';
+      const signature = createHmac('sha256', secret).update(`${passwordLogin ? 'password' : 'user'}:${data.userId}:${expires}`).digest('hex');
+      return setSession(NextResponse.json({ ok: true, enrollmentOnly: !passwordLogin }), `${passwordLogin ? 'p' : 'u'}.${data.userId}.${expires}.${signature}`, request);
     }
 
     if (body.action === 'bootstrap') {

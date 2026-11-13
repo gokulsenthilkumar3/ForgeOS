@@ -1,7 +1,7 @@
 export type Role = 'owner' | 'admin' | 'member' | 'auditor' | 'service_account';
 export type ModuleId =
   | 'commitcraft' | 'stackforge' | 'snapdiff' | 'comparer' | 'regexforge' | 'loadlab'
-  | 'promptvault' | 'probeai' | 'pulsewatch' | 'dbpulse' | 'glbviewer' | 'craftcv' | 'vaultiq' | 'mathshield';
+  | 'promptvault' | 'probeai' | 'pulsewatch' | 'dbpulse' | 'glbviewer' | 'craftcv' | 'vaultiq' | 'mathshield' | 'agentshield';
 
 export interface Workspace { id: string; name: string; slug: string; plan: 'cloud' | 'self-hosted'; moduleIds: ModuleId[]; createdAt: string }
 export interface Project { id: string; workspaceId: string; name: string; moduleIds: ModuleId[]; createdAt: string }
@@ -26,9 +26,12 @@ export const modules: Array<{ id: ModuleId; name: string; category: string; desc
   { id: 'promptvault', name: 'PromptVault', category: 'AI', description: 'Prompt versioning and experiments' },
   { id: 'probeai', name: 'ProbeAI', category: 'AI', description: 'LLM evaluation and regression' },
   { id: 'pulsewatch', name: 'PulseWatch', category: 'Operations', description: 'Uptime monitoring and incidents' },
-  { id: 'dbpulse', name: 'DBPulse', category: 'Operations', description: 'Database activity intelligence' },
+  { id: 'dbpulse', name: 'DBPulse', category: 'Operations', description: 'Compare tables across connected databases with schema and row-level evidence' },
   { id: 'glbviewer', name: 'GLBViewer', category: 'Assets', description: '3D asset viewing and sharing' },
   { id: 'craftcv', name: 'CraftCV', category: 'Assets', description: 'Private CV authoring and export' },
   { id: 'vaultiq', name: 'VaultIQ', category: 'Assets', description: 'Zero-knowledge credential vault' },
-  { id: 'mathshield', name: 'MathShield', category: 'Security', description: 'Adaptive human verification and bot protection' }
+  { id: 'mathshield', name: 'MathShield', category: 'Security', description: 'Adaptive human verification and bot protection' },
+  { id: 'agentshield', name: 'AgentShield', category: 'Security', description: 'Agent identity, scoped authorization and containment policy drafts' }
 ];
+
+export * from './agent-shield';

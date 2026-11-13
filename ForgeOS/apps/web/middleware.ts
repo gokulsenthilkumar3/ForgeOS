@@ -16,6 +16,10 @@ async function sessionKind(value: string | undefined, secret: string): Promise<S
     if (Date.now() - Number(parts[2]) > 15 * 60_000 || Number(parts[2]) > Date.now() + 60_000) return null;
     payload = `webauthn:${parts[1]}:${parts[2]}:${expires}`;
     kind = 'human';
+  } else if (parts[0] === 'p' && parts.length === 4 && userIdPattern.test(parts[1]) && process.env.FORGEOS_AUTH_MODE === 'password') {
+    [, , expires, signature] = parts;
+    payload = `password:${parts[1]}:${expires}`;
+    kind = 'human';
   } else if (parts[0] === 'u' && parts.length === 4 && userIdPattern.test(parts[1])) {
     [, , expires, signature] = parts;
     payload = `user:${parts[1]}:${expires}`;
@@ -58,4 +62,4 @@ export async function middleware(request: NextRequest) {
   return NextResponse.redirect(login);
 }
 
-export const config = { matcher: ['/', '/enroll-key', '/settings/:path*', '/modules/:path*', '/api/v1/:path*', '/api/pulsewatch/:path*', '/api/llm/:path*'] };
+export const config = { matcher: ['/', '/cdn', '/dashboards/:path*', '/help/:path*', '/tutorial', '/activity', '/enroll-key', '/settings/:path*', '/modules/:path*', '/api/v1/:path*', '/api/pulsewatch/:path*', '/api/llm/:path*'] };
