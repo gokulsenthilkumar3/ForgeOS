@@ -1,0 +1,75 @@
+{
+  "name": "commitcraft",
+  "displayName": "CommitCraft - Local Commit Review",
+  "description": "Offline staged-change evidence and editable Conventional Commit drafts. No automatic commits or source uploads.",
+  "version": "0.1.0",
+  "publisher": "forgeos-local",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "SCM Providers",
+    "Other"
+  ],
+  "main": "./extension.cjs",
+  "extensionKind": [
+    "workspace"
+  ],
+  "extensionDependencies": [
+    "vscode.git"
+  ],
+  "activationEvents": [
+    "onCommand:commitcraft.open",
+    "onView:commitcraft.review"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "Review requires an explicitly trusted repository."
+    },
+    "virtualWorkspaces": false
+  },
+  "contributes": {
+    "commands": [
+      {
+        "command": "commitcraft.open",
+        "title": "CommitCraft: Open Staged Review"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "commitcraft",
+          "title": "CommitCraft",
+          "icon": "media/commitcraft.svg"
+        }
+      ]
+    },
+    "views": {
+      "commitcraft": [
+        {
+          "id": "commitcraft.review",
+          "name": "Staged Review",
+          "type": "webview"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "CommitCraft",
+      "properties": {
+        "commitcraft.maxDiffBytes": {
+          "type": "number",
+          "default": 262144,
+          "minimum": 16384,
+          "maximum": 1048576,
+          "description": "Maximum staged diff size accepted for local review. Oversized diffs are rejected, not silently summarized."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "test": "node --test test/*.test.cjs",
+    "package": "npx --yes @vscode/vsce package --no-dependencies --allow-missing-repository --out ../../ForgeOS/apps/web/public/downloads/commitcraft-0.1.0.vsix"
+  }
+}
