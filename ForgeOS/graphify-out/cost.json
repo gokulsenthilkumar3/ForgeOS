@@ -1,0 +1,6 @@
+{
+  "ast_model_tokens": 0,
+  "semantic_input_tokens": null,
+  "semantic_output_tokens": null,
+  "reason": "Host does not expose semantic subagent token usage"
+}
