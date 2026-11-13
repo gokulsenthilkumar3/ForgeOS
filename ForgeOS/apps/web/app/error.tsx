@@ -1,0 +1,4 @@
+'use client';
+export default function ErrorPage({error,reset}:{error:Error & {digest?:string};reset:()=>void}) {
+ return <main className="recovery-page error-boundary"><header className="recovery-header"><a className="recovery-brand" href="/"><span>F</span>ForgeOS</a><a href="/help/desk">Help desk</a></header><section className="recovery-copy"><span className="recovery-label">WORKSPACE / RECOVERABLE ERROR</span><h1>That did not<br />go as planned.</h1><p>We could not finish loading this view. Try it again, or return to the workspace. Avoid resubmitting a write until you have checked whether it completed.</p>{error.digest && <p className="error-reference">Reference: <code>{error.digest}</code></p>}<div className="recovery-actions"><button className="button-primary" onClick={reset}>Try this view again</button><a href="/">Back to workspace</a><a href="/help/desk">Get help</a></div></section></main>;
+}

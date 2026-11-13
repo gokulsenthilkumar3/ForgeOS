@@ -1,0 +1,62 @@
+/* Adapted from the supplied Engineering Console reference; no demo behavior. */
+:root{--rail:#0f1621;--rail-2:#16202e;--rail-line:#26303e;--line-strong:#c6cfda}
+.console-redesign .console-sidebar{background:var(--rail);padding:16px 12px}
+.console-redesign .console-brand{padding:0 8px 19px;border-bottom:1px solid var(--rail-line);margin-bottom:16px}
+.console-redesign .brand-mark{background:var(--accent);color:#fff;box-shadow:none;border-radius:6px}
+.console-redesign .workspace-switcher{background:var(--rail-2);border-color:var(--rail-line)}
+.console-redesign .primary-nav a,.console-redesign .module-nav a{font-size:13px;border-radius:5px}
+.console-redesign .primary-nav a.current,.console-redesign .module-nav a.current{background:var(--accent);box-shadow:none;color:#fff}
+.console-redesign .console-topbar{min-height:48px;height:auto;padding-top:9px;padding-bottom:9px}
+.console-redesign .console-content{padding-top:28px}
+.dashboard-hero{border-radius:10px;box-shadow:none;background-color:#101b2a;background-image:linear-gradient(#235bba18 1px,transparent 1px),linear-gradient(90deg,#235bba18 1px,transparent 1px);background-size:28px 28px;padding:28px;gap:28px}
+.hero-copy>p:not(.eyebrow){font-size:27px;line-height:1.3;letter-spacing:-.025em}
+.hero-workspace{transform:none;box-shadow:none;border-radius:7px}
+.dashboard-stat-grid{margin:16px 0 26px;border-radius:7px}
+.dashboard-stat-grid>div{padding:17px 20px}
+.dashboard-stat-grid strong{font:800 26px/1.2 ui-monospace,Consolas,monospace;letter-spacing:-.03em}
+.dashboard-section{margin-bottom:28px}
+.dashboard-section-title{margin-bottom:14px}
+.dashboard-section-title h2{font-size:21px;letter-spacing:-.02em}
+.workflow-grid{grid-template-columns:1fr;gap:0;border:1px solid var(--line);border-radius:7px;overflow:hidden}
+.workflow-card{display:grid;grid-template-columns:36px minmax(0,1fr) auto;column-gap:14px;min-height:82px;border:0;border-bottom:1px solid var(--line);border-radius:0;padding:15px 18px;transition:background .12s}
+.workflow-card:last-child{border-bottom:0}
+.workflow-card:hover{transform:none;background:#eaf1fb}
+.workflow-number{grid-row:1/3;display:grid;place-items:center;margin:0;border:1px solid #c4d7f2;border-radius:5px;background:#eaf1fb;color:var(--accent);width:32px;height:32px;align-self:center}
+.workflow-number>span{display:none}.workflow-card>strong{font-size:14px;align-self:end}
+.workflow-card p{grid-column:2;margin:4px 0 0;font-size:12px}.workflow-card>small{grid-column:3;grid-row:1/3;align-self:center;font:11px ui-monospace,Consolas,monospace}
+.dashboard-tool-card{padding:15px;border-radius:7px;transition:border-color .12s}
+.dashboard-tool-card h3{margin-top:12px}.dashboard-tool-card p{margin-bottom:14px}
+.inspector-panel{border-radius:7px;padding:17px}.inspector-panel h2{font-size:18px;margin:13px 0 17px}
+.inspector-help{border-radius:7px;padding:19px;background:#eaf1fb}
+.recovery-visual{transform:none;box-shadow:none}.recovery-route-map{display:block;width:100%;height:140px;border-bottom:1px solid #2b425d}.recovery-number{font-size:88px;padding-top:12px}
+.recovery-copy h1{font-size:clamp(34px,4vw,49px);letter-spacing:-.035em}.recovery-layout{max-width:1000px;gap:6vw}
+/* Native data and explicit actions in three readable work areas. */
+.tool-card.commit-workbench{padding:0;max-width:none;overflow:hidden}
+.commit-workbench .extension-download{margin:0;border:0;border-bottom:1px solid var(--line);border-radius:0;padding:18px 22px;background:#eaf1fb}
+.commit-context{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:22px;border-bottom:1px solid var(--line)}
+.commit-context h2{margin:8px 0!important;font-size:25px!important}.commit-context p{margin:0!important;color:var(--muted);font-size:12px}
+.commit-mode{font:11px ui-monospace,Consolas,monospace;color:var(--accent);padding:6px 9px;border:1px solid #c4d7f2;border-radius:5px;white-space:nowrap;background:#eaf1fb}
+.commit-pane-nav{display:none}.commit-panes{display:grid;grid-template-columns:minmax(170px,.75fr) minmax(0,2fr) minmax(210px,.9fr);min-height:540px}
+.commit-drafts,.commit-assistant{padding:18px;min-width:0;background:#f5f6f8}.commit-drafts{border-right:1px solid var(--line)}.commit-assistant{border-left:1px solid var(--line)}
+.commit-drafts h3{font:700 10px ui-monospace,Consolas,monospace;letter-spacing:.08em;margin:0 0 12px}.commit-drafts>p{font-size:12px;color:var(--muted)}
+.commit-draft-list{margin:18px -18px 0;max-height:560px;overflow:auto}.commit-draft-list>p{font-size:12px;color:var(--muted);padding:0 18px}
+.commit-workbench .commit-draft-list button{display:block;text-align:left;width:100%;margin:0;border:0;border-bottom:1px solid var(--line);border-left:2px solid transparent;border-radius:0;background:transparent;padding:12px 16px}
+.commit-draft-list button strong{display:block;font:12px/1.6 ui-monospace,Consolas,monospace;overflow-wrap:anywhere;font-weight:600}.commit-draft-list small{display:block;margin-top:6px;color:var(--muted);font-size:10px}
+.commit-workbench .commit-draft-list button[aria-pressed=true]{background:#eaf1fb;border-left-color:var(--accent)}
+.commit-editor{min-width:0;padding:22px;background:#fff}.commit-editor>p{font-size:12px;color:var(--muted)}
+.commit-workbench label{font-size:12px;font-weight:700}.commit-workbench input,.commit-workbench select{width:100%;min-width:0}.commit-workbench .tool-row{flex-wrap:wrap}.commit-workbench .tool-row>label{flex:1;min-width:110px}
+.commit-editor textarea{display:block;width:100%;min-height:230px;background:var(--code-bg);color:var(--code-text);font:13px/1.6 ui-monospace,Consolas,monospace;border:1px solid #2a3b51;border-radius:7px;margin-top:8px;padding:16px;resize:vertical}
+.commit-editor textarea::placeholder{color:#9aabc1}.commit-editor textarea:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+.commit-editor pre{background:var(--code-bg);color:var(--code-text);font:13px/1.6 ui-monospace,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere;min-height:100px;padding:16px;border-radius:7px}
+.commit-editor h3,.commit-assistant h3{font-size:14px}.commit-assistant p{font-size:12px;line-height:1.6;color:var(--muted)}.commit-assistant .tool-row{display:flex;flex-direction:column;align-items:stretch;gap:13px}.commit-assistant .workbench-mode{font-size:9px;line-height:1.6;display:block}.commit-history{padding:0 22px 22px;border-top:1px solid var(--line)}
+.commit-workbench button:focus-visible,.commit-workbench input:focus-visible,.commit-workbench select:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+/* Keep the requested dark sign-in, borrowing the reference's tighter typography. */
+.login-page.login-focus .login-panel{border-radius:12px;box-shadow:none;border-color:#2a3545;background:#171f2b}
+.login-page.login-focus .signin-story h2{font-size:clamp(32px,3.2vw,43px);letter-spacing:-.035em;font-weight:700}
+.login-page.login-focus h1{font-size:28px;font-weight:700}.login-page.login-focus .signin-brand{font-family:ui-monospace,Consolas,monospace;font-size:17px;letter-spacing:.07em}
+.login-page.login-focus .signin-brand>span{background:#235bba;color:#fff;border-radius:7px}.login-page.login-focus .signin-proof{font-family:ui-monospace,Consolas,monospace;font-size:10px}
+@media(max-width:1150px){.commit-panes{grid-template-columns:180px minmax(0,1fr)}.commit-assistant{grid-column:1/-1;border-left:0;border-top:1px solid var(--line)}.commit-assistant .tool-row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:760px){.console-redesign .console-sidebar{padding:12px 16px}.console-redesign .console-brand{margin-bottom:12px}.console-redesign .console-content{padding-top:22px}.dashboard-hero{padding:23px}.hero-copy>p:not(.eyebrow){font-size:25px}.workflow-card{grid-template-columns:32px minmax(0,1fr);padding:14px}.workflow-card>small{grid-column:2;grid-row:3;margin-top:9px}.workflow-number{grid-row:1/4}.recovery-route-map{height:110px}.commit-context{align-items:flex-start;flex-direction:column;padding:18px}.commit-pane-nav{display:flex;border-bottom:1px solid var(--line);overflow:auto;padding:0 12px}.commit-workbench .commit-pane-nav button{white-space:nowrap;background:transparent;border:0;border-bottom:2px solid transparent;border-radius:0;margin:0;padding:13px 9px;font-size:12px}.commit-workbench .commit-pane-nav button[aria-pressed=true]{border-bottom-color:var(--accent);color:var(--accent)}.commit-panes{display:block;min-height:0}.commit-drafts,.commit-editor,.commit-assistant{display:none;border:0;padding:18px}.commit-workbench[data-pane=drafts] .commit-drafts,.commit-workbench[data-pane=editor] .commit-editor,.commit-workbench[data-pane=assistant] .commit-assistant{display:block}.commit-assistant .tool-row{display:flex}.commit-history{display:none}.commit-workbench input,.commit-workbench select{font-size:16px}.commit-workbench .extension-download{padding:16px;flex-wrap:wrap}.commit-workbench .extension-download a{white-space:normal}.login-page.login-focus .signin-story h2{font-size:28px}}
+@media(prefers-reduced-motion:reduce){.workflow-card,.dashboard-tool-card{transition:none}}
+
+.commit-editor>label{display:block;margin:18px 0}.commit-workbench .commit-save{background:var(--accent);border-color:var(--accent);color:#fff}.commit-workbench .commit-save:hover{background:#1a4691}.commit-drafts [role=alert]{color:var(--danger);font-size:12px}
