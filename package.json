@@ -5,6 +5,7 @@
   "packageManager": "pnpm@9.15.0",
   "scripts": {
     "build": "pnpm --dir ForgeOS build",
+    "graphify": "pnpm --dir ForgeOS graphify",
     "test": "pnpm --dir ForgeOS test",
     "typecheck": "pnpm --dir ForgeOS typecheck",
     "start": "docker compose -f ForgeOS/docker-compose.yml --project-directory ForgeOS up --build",

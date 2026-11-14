@@ -1,0 +1,530 @@
+{
+  "ForgeOS/apps/api/jest.config.cjs": {
+    "mtime": 1789330667.3305495,
+    "seen": 1794591828.8673267,
+    "ast_hash": "8091e747e960605b2872e13662244cd9",
+    "semantic_hash": "8091e747e960605b2872e13662244cd9"
+  },
+  "ForgeOS/apps/api/nest-cli.json": {
+    "mtime": 1789330208.7690687,
+    "seen": 1794591828.8673267,
+    "ast_hash": "f5258e73e2b5be67e44797afb9a154d8",
+    "semantic_hash": "f5258e73e2b5be67e44797afb9a154d8"
+  },
+  "ForgeOS/apps/api/package.json": {
+    "mtime": 1790264509.31597,
+    "seen": 1794591828.8673267,
+    "ast_hash": "b9b50ba92cf4992b9b32608346bfc2a1",
+    "semantic_hash": "b9b50ba92cf4992b9b32608346bfc2a1"
+  },
+  "ForgeOS/apps/api/src/agent-access.controller.ts": {
+    "mtime": 1790265161.5944972,
+    "seen": 1794591828.8673267,
+    "ast_hash": "e28a42d164ffbbbf64665bf2abadb5d0",
+    "semantic_hash": "e28a42d164ffbbbf64665bf2abadb5d0"
+  },
+  "ForgeOS/apps/api/src/agent-access.service.spec.ts": {
+    "mtime": 1790265228.899034,
+    "seen": 1794591828.8673267,
+    "ast_hash": "35cfbf1393c78a28e1492cf1298c2008",
+    "semantic_hash": "35cfbf1393c78a28e1492cf1298c2008"
+  },
+  "ForgeOS/apps/api/src/agent-access.service.ts": {
+    "mtime": 1790265161.5935018,
+    "seen": 1794591828.8673267,
+    "ast_hash": "7b10c58cf1e7dcf0a25c6fa34d84636f",
+    "semantic_hash": "7b10c58cf1e7dcf0a25c6fa34d84636f"
+  },
+  "ForgeOS/apps/api/src/agent-shield.spec.ts": {
+    "mtime": 1794591289.70202,
+    "seen": 1794591828.8673267,
+    "ast_hash": "b682ecb211c565f3f256c6ada8a416bb",
+    "semantic_hash": "b682ecb211c565f3f256c6ada8a416bb"
+  },
+  "ForgeOS/apps/api/src/app.module.ts": {
+    "mtime": 1790265187.4790921,
+    "seen": 1794591828.8673267,
+    "ast_hash": "f4e7878d5b346632a5943d690f9ad3ca",
+    "semantic_hash": "f4e7878d5b346632a5943d690f9ad3ca"
+  },
+  "ForgeOS/apps/api/src/main.ts": {
+    "mtime": 1790223134.3706515,
+    "seen": 1794591828.8673267,
+    "ast_hash": "b694e0dc95cfe4620f5912cf363cd7ed",
+    "semantic_hash": "b694e0dc95cfe4620f5912cf363cd7ed"
+  },
+  "ForgeOS/apps/api/src/password.spec.ts": {
+    "mtime": 1790223417.0871692,
+    "seen": 1794591828.8673267,
+    "ast_hash": "b63d5d3c29ad404638e04b2c47645c1a",
+    "semantic_hash": "b63d5d3c29ad404638e04b2c47645c1a"
+  },
+  "ForgeOS/apps/api/src/password.ts": {
+    "mtime": 1790223417.0861683,
+    "seen": 1794591828.8673267,
+    "ast_hash": "3c9b32acb7b576075bf098f6bede78f9",
+    "semantic_hash": "3c9b32acb7b576075bf098f6bede78f9"
+  },
+  "ForgeOS/apps/api/src/platform.controller.ts": {
+    "mtime": 1790265519.8202467,
+    "seen": 1794591828.8673267,
+    "ast_hash": "efb3f749201fdb5356959ff2a5fabf47",
+    "semantic_hash": "efb3f749201fdb5356959ff2a5fabf47"
+  },
+  "ForgeOS/apps/api/src/platform.service.spec.ts": {
+    "mtime": 1794591435.765031,
+    "seen": 1794591828.8673267,
+    "ast_hash": "e9e294eaf6cd8569e280c8e4bace0469",
+    "semantic_hash": "e9e294eaf6cd8569e280c8e4bace0469"
+  },
+  "ForgeOS/apps/api/src/platform.service.ts": {
+    "mtime": 1794591967.2633657,
+    "seen": 1794592023.6144543,
+    "ast_hash": "544349b9a38b9b4138ec0a9959466f9f",
+    "semantic_hash": "544349b9a38b9b4138ec0a9959466f9f"
+  },
+  "ForgeOS/apps/api/src/session.guard.spec.ts": {
+    "mtime": 1790264999.5727615,
+    "seen": 1794591828.8673267,
+    "ast_hash": "67e78701e77178740e1d40bb2927b4e7",
+    "semantic_hash": "67e78701e77178740e1d40bb2927b4e7"
+  },
+  "ForgeOS/apps/api/src/session.guard.ts": {
+    "mtime": 1790265187.4770906,
+    "seen": 1794591828.8673267,
+    "ast_hash": "a9477a6b93cd8a8e29d52a3f04d00449",
+    "semantic_hash": "a9477a6b93cd8a8e29d52a3f04d00449"
+  },
+  "ForgeOS/apps/api/src/webauthn-policy.spec.ts": {
+    "mtime": 1790265602.9946008,
+    "seen": 1794591828.8673267,
+    "ast_hash": "0e833c55cb026fa14cc20dd83abf8275",
+    "semantic_hash": "0e833c55cb026fa14cc20dd83abf8275"
+  },
+  "ForgeOS/apps/api/src/webauthn-policy.ts": {
+    "mtime": 1790265602.9936051,
+    "seen": 1794591828.8673267,
+    "ast_hash": "ecc6af7bb962f800835c377eb6c76cde",
+    "semantic_hash": "ecc6af7bb962f800835c377eb6c76cde"
+  },
+  "ForgeOS/apps/api/src/webauthn.service.spec.ts": {
+    "mtime": 1790265544.1589162,
+    "seen": 1794591828.8673267,
+    "ast_hash": "cc8989a86c59d6d6b2c3befebde67f04",
+    "semantic_hash": "cc8989a86c59d6d6b2c3befebde67f04"
+  },
+  "ForgeOS/apps/api/tsconfig.json": {
+    "mtime": 1789330206.0739038,
+    "seen": 1794591828.8673267,
+    "ast_hash": "ade208f6e489966c8de0f9d88038ff51",
+    "semantic_hash": "ade208f6e489966c8de0f9d88038ff51"
+  },
+  "ForgeOS/apps/web/app/agent-access.tsx": {
+    "mtime": 1790265367.9897895,
+    "seen": 1794591828.8673267,
+    "ast_hash": "8010c79e319a96e7766426ba40753894",
+    "semantic_hash": "8010c79e319a96e7766426ba40753894"
+  },
+  "ForgeOS/apps/web/app/api/llm/route.ts": {
+    "mtime": 1790176262.893753,
+    "seen": 1794591828.8673267,
+    "ast_hash": "cf5742376e09a9725b0fc5d35e8ba0be",
+    "semantic_hash": "cf5742376e09a9725b0fc5d35e8ba0be"
+  },
+  "ForgeOS/apps/web/app/api/pulsewatch/[...path]/route.ts": {
+    "mtime": 1790223314.8290374,
+    "seen": 1794591828.8673267,
+    "ast_hash": "972acd8ba763b2732a12332c0024b39d",
+    "semantic_hash": "972acd8ba763b2732a12332c0024b39d"
+  },
+  "ForgeOS/apps/web/app/api/session/route.ts": {
+    "mtime": 1790264614.284787,
+    "seen": 1794591828.8673267,
+    "ast_hash": "767afc7cd80c52aa40308a9aed3cb2dc",
+    "semantic_hash": "767afc7cd80c52aa40308a9aed3cb2dc"
+  },
+  "ForgeOS/apps/web/app/enroll-key/page.tsx": {
+    "mtime": 1790264953.4957738,
+    "seen": 1794591828.8673267,
+    "ast_hash": "4fdd16c56ae78bdfa16e175863f8f20c",
+    "semantic_hash": "4fdd16c56ae78bdfa16e175863f8f20c"
+  },
+  "ForgeOS/apps/web/app/layout.tsx": {
+    "mtime": 1790191635.5940142,
+    "seen": 1794591828.8673267,
+    "ast_hash": "b379060d2edd4bb209c305bdc784500a",
+    "semantic_hash": "b379060d2edd4bb209c305bdc784500a"
+  },
+  "ForgeOS/apps/web/app/login/page.tsx": {
+    "mtime": 1790264782.9259167,
+    "seen": 1794591828.8673267,
+    "ast_hash": "418c87b9d18032a3a48434e254bc7f44",
+    "semantic_hash": "418c87b9d18032a3a48434e254bc7f44"
+  },
+  "ForgeOS/apps/web/app/modules/[id]/agent-shield.tsx": {
+    "mtime": 1794591435.7751305,
+    "seen": 1794591828.8673267,
+    "ast_hash": "5616c505add37bd0d28d4563d625331a",
+    "semantic_hash": "5616c505add37bd0d28d4563d625331a"
+  },
+  "ForgeOS/apps/web/app/modules/[id]/commit-engine.mjs": {
+    "mtime": 1790223417.5404866,
+    "seen": 1794591828.8673267,
+    "ast_hash": "d162d7e62d9839fd8277e7a723da9ca9",
+    "semantic_hash": "d162d7e62d9839fd8277e7a723da9ca9"
+  },
+  "ForgeOS/apps/web/app/modules/[id]/commit-tool.tsx": {
+    "mtime": 1790223511.2661746,
+    "seen": 1794591828.8673267,
+    "ast_hash": "057ea6dc8547f9ba58f047e6e3dce174",
+    "semantic_hash": "057ea6dc8547f9ba58f047e6e3dce174"
+  },
+  "ForgeOS/apps/web/app/modules/[id]/compare-engine.mjs": {
+    "mtime": 1790222781.001561,
+    "seen": 1794591828.8673267,
+    "ast_hash": "5860b032fb1ae96d2cd55dcd19d7c69f",
+    "semantic_hash": "5860b032fb1ae96d2cd55dcd19d7c69f"
+  },
+  "ForgeOS/apps/web/app/modules/[id]/compare-tool.tsx": {
+    "mtime": 1790223182.339203,
+    "seen": 1794591828.8673267,
+    "ast_hash": "4b087af8ecb003a98d1c84a1344fdaf3",
+    "semantic_hash": "4b087af8ecb003a98d1c84a1344fdaf3"
+  },
+  "ForgeOS/apps/web/app/modules/[id]/model-viewer.tsx": {
+    "mtime": 1790175393.4532511,
+    "seen": 1794591828.8673267,
+    "ast_hash": "a296d2257db228952872b6c6cf30e38d",
+    "semantic_hash": "a296d2257db228952872b6c6cf30e38d"
+  },
+  "ForgeOS/apps/web/app/modules/[id]/module-gate.tsx": {
+    "mtime": 1790183383.005906,
+    "seen": 1794591828.8673267,
+    "ast_hash": "6c455cb64ac309226e9c73116c646023",
+    "semantic_hash": "6c455cb64ac309226e9c73116c646023"
+  },
+  "ForgeOS/apps/web/app/modules/[id]/more-tools.tsx": {
+    "mtime": 1790223298.1013455,
+    "seen": 1794591828.8673267,
+    "ast_hash": "d1d364134e5b3d0463ff53368a3d90ba",
+    "semantic_hash": "d1d364134e5b3d0463ff53368a3d90ba"
+  },
+  "ForgeOS/apps/web/app/modules/[id]/page.tsx": {
+    "mtime": 1790191169.8124847,
+    "seen": 1794591828.8673267,
+    "ast_hash": "1a5d023148ddac4ce57aca00232db154",
+    "semantic_hash": "1a5d023148ddac4ce57aca00232db154"
+  },
+  "ForgeOS/apps/web/app/modules/[id]/prompt-import.mjs": {
+    "mtime": 1790223418.0235858,
+    "seen": 1794591828.8673267,
+    "ast_hash": "952deea3e25300397e1792ceae31f724",
+    "semantic_hash": "952deea3e25300397e1792ceae31f724"
+  },
+  "ForgeOS/apps/web/app/modules/[id]/prompt-vault.tsx": {
+    "mtime": 1790223497.5327027,
+    "seen": 1794591828.8673267,
+    "ast_hash": "8374e446f26e68eb51c736a1f1bb3638",
+    "semantic_hash": "8374e446f26e68eb51c736a1f1bb3638"
+  },
+  "ForgeOS/apps/web/app/modules/[id]/regex-tool.tsx": {
+    "mtime": 1790222944.5080254,
+    "seen": 1794591828.8673267,
+    "ast_hash": "5f86adcb94e2aa8977be572ef856bd66",
+    "semantic_hash": "5f86adcb94e2aa8977be572ef856bd66"
+  },
+  "ForgeOS/apps/web/app/modules/[id]/scaffold-engine.mjs": {
+    "mtime": 1790223602.3358982,
+    "seen": 1794591828.8673267,
+    "ast_hash": "3e3ca10ebcf6ecdbbe347d6ab4185667",
+    "semantic_hash": "3e3ca10ebcf6ecdbbe347d6ab4185667"
+  },
+  "ForgeOS/apps/web/app/modules/[id]/scaffold-tool.tsx": {
+    "mtime": 1790223602.3368974,
+    "seen": 1794591828.8673267,
+    "ast_hash": "871eaa9a6abb9b442a9cf62ef6a1f9bc",
+    "semantic_hash": "871eaa9a6abb9b442a9cf62ef6a1f9bc"
+  },
+  "ForgeOS/apps/web/app/modules/[id]/use-llm.ts": {
+    "mtime": 1790176304.6999888,
+    "seen": 1794591828.8673267,
+    "ast_hash": "e98ce5bea8b6d44fd9b8950ab40a5626",
+    "semantic_hash": "e98ce5bea8b6d44fd9b8950ab40a5626"
+  },
+  "ForgeOS/apps/web/app/modules/[id]/vault-storage.ts": {
+    "mtime": 1790223444.5049696,
+    "seen": 1794591828.8673267,
+    "ast_hash": "3569c01de09f53ae490bbd10892bd7a2",
+    "semantic_hash": "3569c01de09f53ae490bbd10892bd7a2"
+  },
+  "ForgeOS/apps/web/app/modules/[id]/workbench-tools.tsx": {
+    "mtime": 1790223477.4402132,
+    "seen": 1794591828.8673267,
+    "ast_hash": "e3c46f0e834a984285b8327950bd6190",
+    "semantic_hash": "e3c46f0e834a984285b8327950bd6190"
+  },
+  "ForgeOS/apps/web/app/modules/[id]/workbench.tsx": {
+    "mtime": 1794591967.2663689,
+    "seen": 1794592023.6149702,
+    "ast_hash": "489167839f9f9616228c111dbc615ffc",
+    "semantic_hash": "489167839f9f9616228c111dbc615ffc"
+  },
+  "ForgeOS/apps/web/app/page.tsx": {
+    "mtime": 1790191169.8104815,
+    "seen": 1794591828.867881,
+    "ast_hash": "a605c0f24e3633ec6bf068bd084070a1",
+    "semantic_hash": "a605c0f24e3633ec6bf068bd084070a1"
+  },
+  "ForgeOS/apps/web/app/settings/agents/page.tsx": {
+    "mtime": 1790265367.9917922,
+    "seen": 1794591828.867881,
+    "ast_hash": "10b333ffb20124c6cc70e7939e85eba1",
+    "semantic_hash": "10b333ffb20124c6cc70e7939e85eba1"
+  },
+  "ForgeOS/apps/web/app/shell.tsx": {
+    "mtime": 1790265400.0217748,
+    "seen": 1794591828.867881,
+    "ast_hash": "b69bf1959e92639c8c5b336cb7eb8e89",
+    "semantic_hash": "b69bf1959e92639c8c5b336cb7eb8e89"
+  },
+  "ForgeOS/apps/web/middleware.ts": {
+    "mtime": 1790265400.0243275,
+    "seen": 1794591828.867881,
+    "ast_hash": "838cca09458461a698b5e799616cbc1a",
+    "semantic_hash": "838cca09458461a698b5e799616cbc1a"
+  },
+  "ForgeOS/apps/web/next-env.d.ts": {
+    "mtime": 1789330602.5276263,
+    "seen": 1794591828.867881,
+    "ast_hash": "90426577ad8f38459f3e566411c85589",
+    "semantic_hash": "90426577ad8f38459f3e566411c85589"
+  },
+  "ForgeOS/apps/web/next.config.mjs": {
+    "mtime": 1790222932.6720128,
+    "seen": 1794591828.867881,
+    "ast_hash": "93e6f5773500e0760c413c7c8f04857e",
+    "semantic_hash": "93e6f5773500e0760c413c7c8f04857e"
+  },
+  "ForgeOS/apps/web/package.json": {
+    "mtime": 1790264872.1880615,
+    "seen": 1794591828.867881,
+    "ast_hash": "05bb8cb9f0876173ec2b34133596f7dd",
+    "semantic_hash": "05bb8cb9f0876173ec2b34133596f7dd"
+  },
+  "ForgeOS/apps/web/public/regex-engine.mjs": {
+    "mtime": 1790222901.8990045,
+    "seen": 1794591828.867881,
+    "ast_hash": "eeb4c74dcdc27087798e80e6cbd92b62",
+    "semantic_hash": "eeb4c74dcdc27087798e80e6cbd92b62"
+  },
+  "ForgeOS/apps/web/public/regex-worker.mjs": {
+    "mtime": 1790222901.9000032,
+    "seen": 1794591828.867881,
+    "ast_hash": "08681e21ac1914b9c2182595192218e5",
+    "semantic_hash": "08681e21ac1914b9c2182595192218e5"
+  },
+  "ForgeOS/apps/web/tsconfig.json": {
+    "mtime": 1789330602.5207055,
+    "seen": 1794591828.867881,
+    "ast_hash": "8757d9fd277a53670229b49ccf103048",
+    "semantic_hash": "8757d9fd277a53670229b49ccf103048"
+  },
+  "ForgeOS/docker-compose.yml": {
+    "mtime": 1790222892.9944146,
+    "seen": 1794591828.867881,
+    "ast_hash": "a740d6cb65256c46904e267381cecf9e",
+    "semantic_hash": "a740d6cb65256c46904e267381cecf9e"
+  },
+  "ForgeOS/infra/helm/forgeos/Chart.yaml": {
+    "mtime": 1789330290.8082478,
+    "seen": 1794591828.867881,
+    "ast_hash": "863e9b63b7c536517d8ad700007485fb",
+    "semantic_hash": "863e9b63b7c536517d8ad700007485fb"
+  },
+  "ForgeOS/infra/helm/forgeos/templates/deployment.yaml": {
+    "mtime": 1789330298.719297,
+    "seen": 1794591828.867881,
+    "ast_hash": "49f112fe61616a360172e9dfba5f9e6e",
+    "semantic_hash": "49f112fe61616a360172e9dfba5f9e6e"
+  },
+  "ForgeOS/infra/helm/forgeos/values.yaml": {
+    "mtime": 1789330293.7900164,
+    "seen": 1794591828.867881,
+    "ast_hash": "a4365361ce7437b64890c1143517b489",
+    "semantic_hash": "a4365361ce7437b64890c1143517b489"
+  },
+  "ForgeOS/package.json": {
+    "mtime": 1794591967.269903,
+    "seen": 1794592023.6149702,
+    "ast_hash": "136bf2d0cb76b286d6e5ca2d6d27f92b",
+    "semantic_hash": "136bf2d0cb76b286d6e5ca2d6d27f92b"
+  },
+  "ForgeOS/packages/adapters/package.json": {
+    "mtime": 1789330280.9205246,
+    "seen": 1794591828.867881,
+    "ast_hash": "4b1b43e18d8ba93b90332521e435b043",
+    "semantic_hash": "4b1b43e18d8ba93b90332521e435b043"
+  },
+  "ForgeOS/packages/adapters/src/index.ts": {
+    "mtime": 1789330285.5018883,
+    "seen": 1794591828.867881,
+    "ast_hash": "aaa1bf2f8226504511d2edab7792fc1b",
+    "semantic_hash": "aaa1bf2f8226504511d2edab7792fc1b"
+  },
+  "ForgeOS/packages/contracts/package.json": {
+    "mtime": 1790175098.0708864,
+    "seen": 1794591828.867881,
+    "ast_hash": "dfcece021e7ebefc72830fefd48e3bcd",
+    "semantic_hash": "dfcece021e7ebefc72830fefd48e3bcd"
+  },
+  "ForgeOS/packages/contracts/src/agent-shield.ts": {
+    "mtime": 1794591094.525175,
+    "seen": 1794591828.867881,
+    "ast_hash": "44569ad0665aef122316ad0ec5f2314b",
+    "semantic_hash": "44569ad0665aef122316ad0ec5f2314b"
+  },
+  "ForgeOS/packages/contracts/src/index.ts": {
+    "mtime": 1794591967.2719078,
+    "seen": 1794592023.6149702,
+    "ast_hash": "46c98286bb574c05d04eec15654002f9",
+    "semantic_hash": "46c98286bb574c05d04eec15654002f9"
+  },
+  "ForgeOS/packages/contracts/tsconfig.json": {
+    "mtime": 1790175098.0730965,
+    "seen": 1794591828.867881,
+    "ast_hash": "01c88f786f363a6aff7f32d06e716080",
+    "semantic_hash": "01c88f786f363a6aff7f32d06e716080"
+  },
+  "ForgeOS/packages/database/schema.sql": {
+    "mtime": 1789330276.3137074,
+    "seen": 1794591828.867881,
+    "ast_hash": "7857baa0481e0f8eeb119355eb04e993",
+    "semantic_hash": "7857baa0481e0f8eeb119355eb04e993"
+  },
+  "ForgeOS/packages/security/package.json": {
+    "mtime": 1789330045.303917,
+    "seen": 1794591828.867881,
+    "ast_hash": "b31bcaa2e87b433b6f67c6ea07e6938d",
+    "semantic_hash": "b31bcaa2e87b433b6f67c6ea07e6938d"
+  },
+  "ForgeOS/packages/security/src/index.test.ts": {
+    "mtime": 1789330341.684586,
+    "seen": 1794591828.867881,
+    "ast_hash": "6fac41dda9bdb3c544ad9d366b09353e",
+    "semantic_hash": "6fac41dda9bdb3c544ad9d366b09353e"
+  },
+  "ForgeOS/packages/security/src/index.ts": {
+    "mtime": 1789330050.0389588,
+    "seen": 1794591828.867881,
+    "ast_hash": "9b5a67a4766c730bb0e325246ef2daa7",
+    "semantic_hash": "9b5a67a4766c730bb0e325246ef2daa7"
+  },
+  "ForgeOS/pnpm-workspace.yaml": {
+    "mtime": 1789329976.054704,
+    "seen": 1794591828.867881,
+    "ast_hash": "61aa52c32e34d11589be04844de15608",
+    "semantic_hash": "61aa52c32e34d11589be04844de15608"
+  },
+  "ForgeOS/scripts/delivery-engines.test.mjs": {
+    "mtime": 1790223569.1845686,
+    "seen": 1794591828.867881,
+    "ast_hash": "b927fa0b799d88bc1484c5daf9501ebe",
+    "semantic_hash": "b927fa0b799d88bc1484c5daf9501ebe"
+  },
+  "ForgeOS/scripts/dev-web.mjs": {
+    "mtime": 1790445045.6213455,
+    "seen": 1794591828.867881,
+    "ast_hash": "ee194aa3870dd52426efaccc9247867a",
+    "semantic_hash": "ee194aa3870dd52426efaccc9247867a"
+  },
+  "ForgeOS/scripts/dev-web.test.mjs": {
+    "mtime": 1790193099.4871612,
+    "seen": 1794591828.867881,
+    "ast_hash": "4a611712ed38a8f687498c24044bf179",
+    "semantic_hash": "4a611712ed38a8f687498c24044bf179"
+  },
+  "ForgeOS/scripts/graphify-render.py": {
+    "mtime": 1794592019.375458,
+    "seen": 1794592023.6149702,
+    "ast_hash": "9131113d92ae3f356935cdc1f8b138a3",
+    "semantic_hash": "9131113d92ae3f356935cdc1f8b138a3"
+  },
+  "ForgeOS/scripts/prompt-import.test.mjs": {
+    "mtime": 1790223418.0235858,
+    "seen": 1794591828.867881,
+    "ast_hash": "d98eddeaaca8d32060373807f97803d4",
+    "semantic_hash": "d98eddeaaca8d32060373807f97803d4"
+  },
+  "ForgeOS/scripts/quality-engines.test.mjs": {
+    "mtime": 1790223106.5377543,
+    "seen": 1794591828.867881,
+    "ast_hash": "bba59852769f4e4db35efe7d21a9e29b",
+    "semantic_hash": "bba59852769f4e4db35efe7d21a9e29b"
+  },
+  "ForgeOS/scripts/smoke.mjs": {
+    "mtime": 1790265690.8422105,
+    "seen": 1794591828.867881,
+    "ast_hash": "450bc62573ff9b3e3b5afb13dd1eafe7",
+    "semantic_hash": "450bc62573ff9b3e3b5afb13dd1eafe7"
+  },
+  "ForgeOS/scripts/vault-storage.test.mjs": {
+    "mtime": 1790223444.5049696,
+    "seen": 1794591828.867881,
+    "ast_hash": "db07c3b3be5505fcae76015e0618910c",
+    "semantic_hash": "db07c3b3be5505fcae76015e0618910c"
+  },
+  "ForgeOS/services/worker/package.json": {
+    "mtime": 1789330226.617429,
+    "seen": 1794591828.867881,
+    "ast_hash": "8f52123ae6d4e6bfea05235df06727c0",
+    "semantic_hash": "8f52123ae6d4e6bfea05235df06727c0"
+  },
+  "ForgeOS/services/worker/src/index.ts": {
+    "mtime": 1789330235.5394194,
+    "seen": 1794591828.867881,
+    "ast_hash": "afe3e80a86e66760c2d44a1e2f7d0d21",
+    "semantic_hash": "afe3e80a86e66760c2d44a1e2f7d0d21"
+  },
+  "ForgeOS/services/worker/tsconfig.json": {
+    "mtime": 1789330229.554149,
+    "seen": 1794591828.867881,
+    "ast_hash": "5d752b9c2c3c7c3a5e5aaccb79e1f671",
+    "semantic_hash": "5d752b9c2c3c7c3a5e5aaccb79e1f671"
+  },
+  "ForgeOS/turbo.json": {
+    "mtime": 1790186972.4067657,
+    "seen": 1794591828.867881,
+    "ast_hash": "f08d8efbc0bb4b4fb25f39be167e47b5",
+    "semantic_hash": "f08d8efbc0bb4b4fb25f39be167e47b5"
+  },
+  "ForgeOS/DESIGN.md": {
+    "mtime": 1790192026.461563,
+    "seen": 1794591828.867881,
+    "ast_hash": "8adf70ed959334f99162ebc96479cde4",
+    "semantic_hash": "8adf70ed959334f99162ebc96479cde4"
+  },
+  "ForgeOS/README.md": {
+    "mtime": 1794591967.2602417,
+    "seen": 1794592023.6149702,
+    "ast_hash": "7f431a8c3734e6e8819f4cb33e9e7ab8",
+    "semantic_hash": "7f431a8c3734e6e8819f4cb33e9e7ab8"
+  },
+  "ForgeOS/docs/AGENTSHIELD.md": {
+    "mtime": 1794591289.705563,
+    "seen": 1794591828.867881,
+    "ast_hash": "5e9eb9b0413f514bebdef9ca965bf1e2",
+    "semantic_hash": "5e9eb9b0413f514bebdef9ca965bf1e2"
+  },
+  "ForgeOS/docs/ARCHITECTURE.md": {
+    "mtime": 1794591512.1215186,
+    "seen": 1794591828.867881,
+    "ast_hash": "07e43d3cd6083d440af97b0df14ac1b5",
+    "semantic_hash": "07e43d3cd6083d440af97b0df14ac1b5"
+  },
+  "ForgeOS/docs/MODULE-MIGRATION.md": {
+    "mtime": 1794591967.2678976,
+    "seen": 1794592023.6149702,
+    "ast_hash": "dcfb779e056fbed7a97bc60c3f1a7a20",
+    "semantic_hash": "dcfb779e056fbed7a97bc60c3f1a7a20"
+  }
+}

@@ -26,6 +26,9 @@ class WebAuthnStepUpOptionsInput {
   @IsOptional() @IsUUID() workspaceId?: string;
 }
 
+class SupportTicketInput { @IsString() @Length(1, 120) subject!: string; @IsString() @Length(1, 6000) description!: string; @IsIn(['question','problem','feature']) category!: string; }
+class SupportStatusInput { @IsIn(['open','in-progress','resolved']) status!: string; }
+
 class WorkspaceInput { @IsString() @Length(1, 100) name!: string; }
 class ProjectInput { @IsString() @Length(1, 100) name!: string; @IsArray() @IsIn(modules.map(module => module.id), { each: true }) moduleIds!: ModuleId[]; }
 class ModulesInput { @IsArray() @IsIn(modules.map(module => module.id), { each: true }) moduleIds!: ModuleId[]; }
@@ -37,11 +40,11 @@ class ModuleRecordInput { @IsString() @Length(1, 40) recordType!: string; @IsStr
 export class PlatformController {
   constructor(private readonly platform: PlatformService) {}
   @Get('health') health() { return { status: 'ok', mode: process.env.FORGEOS_MODE ?? 'self-hosted' }; }
-  @Get('auth/setup') async setupStatus() { return { ownerRequired: await this.platform.ownerRequired() }; }
+  @Get('auth/setup') async setupStatus() { return { ownerRequired: await this.platform.ownerRequired(), authenticationMode: process.env.FORGEOS_AUTH_MODE === 'password' ? 'password' : 'security-key' }; }
   @Post('auth/setup') setup(@Body() input: OwnerInput) { return this.platform.setupOwner(input.email, input.password, input.bootstrapPassword); }
   @Post('auth/login') login(@Body() input: LoginInput) { return this.platform.loginUser(input.email, input.password); }
   @Post('auth/accept-invite') acceptInvite(@Body() input: AcceptInvitationInput) { return this.platform.acceptInvitation(input.token, input.password); }
-  @Get('auth/session') session(@Req() request: AuthRequest) { return request.forgeosAuth; }
+  @Get('auth/session') session(@Req() request: AuthRequest) { return { ...request.forgeosAuth, session: request.forgeosSession }; }
   @Get('auth/webauthn/credentials') credentials(@Req() request: AuthRequest) { return this.platform.listWebAuthnCredentials(request.forgeosAuth); }
   @Post('auth/webauthn/register/options') registrationOptions(@Body() input: WebAuthnRegisterOptionsInput, @Req() request: AuthRequest) {
     return this.platform.webAuthnRegistrationOptions(request.forgeosAuth, input.label, input.migrationPassword);
@@ -61,6 +64,9 @@ export class PlatformController {
   @Post('auth/webauthn/step-up/verify') stepUpVerify(@Body() input: WebAuthnAuthenticateVerifyInput, @Req() request: AuthRequest) {
     return this.platform.verifyWebAuthnStepUp(request.forgeosAuth, input.challengeId, input.response);
   }
+  @Get('support/tickets') supportTickets(@Req() request: AuthRequest, @Query('workspaceId') workspaceId?: string) { return this.platform.listSupportTickets(workspaceId, request.forgeosAuth); }
+  @Post('support/tickets') createTicket(@Body() input: SupportTicketInput, @Req() request: AuthRequest, @Query('workspaceId') workspaceId?: string) { return this.platform.createSupportTicket(input.subject, input.description, input.category, workspaceId, request.forgeosAuth); }
+  @Patch('support/tickets/:id') updateTicket(@Param('id') id: string, @Body() input: SupportStatusInput, @Req() request: AuthRequest, @Query('workspaceId') workspaceId?: string) { return this.platform.updateSupportTicket(id, input.status, workspaceId, request.forgeosAuth); }
   @Get('modules') listModules() { return modules; }
   @Get('workspaces') workspaces(@Req() request: AuthRequest) { return this.platform.listWorkspaces(request.forgeosAuth); }
   @Post('workspaces') workspace(@Body() input: WorkspaceInput, @Req() request: AuthRequest) { return this.platform.createWorkspace(input.name, request.forgeosAuth); }

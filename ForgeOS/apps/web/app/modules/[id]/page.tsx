@@ -2,6 +2,8 @@ import { notFound } from 'next/navigation';
 import { modules, type ModuleId } from '@forgeos/contracts';
 import { ConsoleShell } from '../../shell';
 
+export const dynamicParams = false;
+
 export function generateStaticParams() { return modules.map(module => ({ id: module.id })); }
 
 export default async function ModulePage({ params }: { params: Promise<{ id: string }> }) {
