@@ -6,6 +6,7 @@ services:
       FORGEOS_MATHSHIELD_INTERNAL_URL: http://mathshield:4001
       FORGEOS_PULSEWATCH_INTERNAL_URL: http://pulsewatch:4002
       FORGEOS_ADMIN_PASSWORD: ${FORGEOS_ADMIN_PASSWORD:?Set FORGEOS_ADMIN_PASSWORD in .env}
+      FORGEOS_AUTH_MODE: ${FORGEOS_AUTH_MODE:-security-key}
       FORGEOS_SESSION_SECRET: ${FORGEOS_SESSION_SECRET:?Set FORGEOS_SESSION_SECRET in .env}
       FORGEOS_SECURE_COOKIES: ${FORGEOS_SECURE_COOKIES:-false}
       FORGEOS_WEBAUTHN_RP_ID: ${FORGEOS_WEBAUTHN_RP_ID:-localhost}
@@ -18,6 +19,8 @@ services:
     build: { context: ., dockerfile: apps/api/Dockerfile }
     environment:
       FORGEOS_MODE: self-hosted
+      FORGEOS_ADMIN_PASSWORD: ${FORGEOS_ADMIN_PASSWORD:?Set FORGEOS_ADMIN_PASSWORD in .env}
+      FORGEOS_AUTH_MODE: ${FORGEOS_AUTH_MODE:-security-key}
       FORGEOS_SESSION_SECRET: ${FORGEOS_SESSION_SECRET:?Set FORGEOS_SESSION_SECRET in .env}
       FORGEOS_ADMIN_PASSWORD: ${FORGEOS_ADMIN_PASSWORD:?Set FORGEOS_ADMIN_PASSWORD in .env}
       FORGEOS_SECURE_COOKIES: ${FORGEOS_SECURE_COOKIES:-false}
@@ -28,6 +31,7 @@ services:
       PORT: 4000
       DATABASE_URL: postgresql://forgeos:${FORGEOS_DB_PASSWORD:?Set FORGEOS_DB_PASSWORD in .env}@postgres:5432/forgeos
       REDIS_URL: redis://redis:6379
+      FORGEOS_DBPULSE_PRIVATE_HOSTS: ${FORGEOS_DBPULSE_PRIVATE_HOSTS:-}
     expose: ["4000"]
     depends_on: [postgres, redis]
   mathshield:

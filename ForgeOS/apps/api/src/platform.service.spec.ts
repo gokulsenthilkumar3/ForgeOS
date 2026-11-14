@@ -51,3 +51,24 @@ describe('PlatformService workspace boundaries', () => {
     expect(query).toHaveBeenCalledTimes(3);
   });
 });
+
+describe('AgentShield draft storage', () => {
+  let service: PlatformService;
+  const actor = { kind: 'user', userId: '11111111-1111-4111-8111-111111111111', email: 'qa@example.com' } as const;
+  const workspace = { id: '00000000-0000-4000-8000-000000000001', moduleIds: ['agentshield'] };
+  const policy = { mode: 'sandbox', allowedOrigins: [], allowedActions: ['projects:read'], tokenBudget: 1000, cacheTtlSeconds: 0 };
+  beforeEach(() => { service = new PlatformService(); });
+  afterEach(async () => { await service.onModuleDestroy(); });
+  it('requires the administrator role boundary before saving', async () => {
+    const boundary = jest.spyOn(service as never, 'workspace' as never).mockRejectedValue(new Error('Insufficient workspace role') as never);
+    await expect(service.saveModuleRecord('agentshield', 'policy', 'Main', policy, workspace.id, actor)).rejects.toThrow('Insufficient workspace role');
+    expect(boundary).toHaveBeenCalledWith(workspace.id, actor, ['owner', 'admin']);
+  });
+  it('rejects invalid drafts and record types before writing', async () => {
+    jest.spyOn(service as never, 'workspace' as never).mockResolvedValue(workspace as never);
+    const query = jest.spyOn((service as unknown as { pool: { query: (...args: unknown[]) => Promise<unknown> } }).pool, 'query');
+    await expect(service.saveModuleRecord('agentshield', 'policy', 'Main', { ...policy, allowedOrigins: ['https://example.com'] }, workspace.id, actor)).rejects.toThrow('Sandbox');
+    await expect(service.saveModuleRecord('agentshield', 'grant', 'Main', policy, workspace.id, actor)).rejects.toThrow('policy drafts');
+    expect(query).not.toHaveBeenCalled();
+  });
+});

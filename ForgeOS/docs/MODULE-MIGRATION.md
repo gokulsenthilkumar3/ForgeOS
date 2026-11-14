@@ -26,5 +26,6 @@ The table distinguishes what works in the shared UI today from the source featur
 | CraftCV | Basic edit, preview and print/PDF | Multiple templates, autosave, schema import |
 | VaultIQ | Browser encrypted entries and generator | Security scoring, secure sharing, account sync |
 | MathShield | Challenge, verification and widget on ForgeOS origin | Shared workspace analytics and configuration UI |
+| AgentShield | Separate policy module, saved administrator drafts, local decision preview, protocol inventory | Edge delivery, sandbox runtime enforcement, A2A/MCP adapters, live budgets and cache metrics; see AGENTSHIELD.md |
 
 Platform tasks still open: worker dispatch and status updates; persistent artifacts and short-lived URLs; deeper enterprise RBAC, SSO, service accounts and deployment-level tenant-isolation validation; full audit coverage; connector secret management; cloud/Kubernetes deployment parity; cross-module search and notifications; end-to-end tests for all source workflows. Prioritize a non-networking worker vertical slice with strict job validation and persisted results before implementing private database capture or arbitrary K6 execution.

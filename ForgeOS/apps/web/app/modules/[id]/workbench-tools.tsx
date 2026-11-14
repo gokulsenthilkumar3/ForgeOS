@@ -1,7 +1,6 @@
 'use client';
 import { useRef, useState } from 'react';
 import { useLlm } from './use-llm';
-import { openVault, persistVault, workspaceVaultKey, type UnlockedVault } from './vault-storage';
 
 export function CommitTool() {
   const [diff, setDiff] = useState(''); const [kind, setKind] = useState('feat'); const [scope, setScope] = useState(''); const [summary, setSummary] = useState('');
@@ -28,68 +27,10 @@ export function RegexTool() {
   return <section className="tool-card"><h2>Test a regular expression</h2><div className="tool-row"><input value={pattern} onChange={event => setPattern(event.target.value)} placeholder="Pattern" aria-label="Pattern" /><input value={flags} onChange={event => setFlags(event.target.value)} placeholder="Flags" aria-label="Flags" /></div><textarea value={sample} onChange={event => setSample(event.target.value)} rows={10} placeholder="Text to test…" />{error ? <p role="alert">{error}</p> : <p>{matches.length} match{matches.length === 1 ? '' : 'es'}</p>}<div className="diff-lines">{matches.map((match, index) => <div key={index}><span>{match.index}</span><code>{match.match || '(empty match)'}</code></div>)}</div></section>;
 }
 
-export function ResumeTool() {
-  const [name, setName] = useState(''); const [title, setTitle] = useState(''); const [email, setEmail] = useState(''); const [summary, setSummary] = useState(''); const [experience, setExperience] = useState('');
-  return <section className="tool-card"><h2>Build a CV</h2><div className="tool-row"><input value={name} onChange={event => setName(event.target.value)} placeholder="Full name" /><input value={title} onChange={event => setTitle(event.target.value)} placeholder="Professional title" /></div><input value={email} onChange={event => setEmail(event.target.value)} placeholder="Email" /><textarea value={summary} onChange={event => setSummary(event.target.value)} placeholder="Profile summary" rows={4} /><textarea value={experience} onChange={event => setExperience(event.target.value)} placeholder="Experience" rows={7} /><button onClick={() => window.print()}>Print / save as PDF</button><div className="cv-preview"><h1>{name || 'Your name'}</h1><h2>{title}</h2><p>{email}</p><p>{summary}</p><h3>Experience</h3><p className="preline">{experience}</p></div></section>;
-}
+export { ResumeTool } from './resume-tool';
+export { VaultTool } from './vault-tool';
 
-export function VaultTool() {
-  const activeVault = useRef<UnlockedVault | null>(null);
-  const savingRef = useRef(false);
-  const [password, setPassword] = useState(''); const [entries, setEntries] = useState<Array<{ name: string; username: string; password: string }>>([]); const [unlocked, setUnlocked] = useState(false); const [saving, setSaving] = useState(false); const [message, setMessage] = useState(''); const [name, setName] = useState(''); const [username, setUsername] = useState(''); const [secret, setSecret] = useState(''); const [showSecret, setShowSecret] = useState(false);
-  async function unlock() {
-    if (!password) return;
-    try {
-      const existing = Boolean(localStorage.getItem(workspaceVaultKey(localStorage)));
-      const vault = await openVault(localStorage, password);
-      activeVault.current = vault;
-      setEntries(vault.entries);
-      setPassword(''); setUnlocked(true);
-      setMessage(existing ? 'Vault unlocked' : 'New vault ready. Add an entry to save it.');
-    } catch { setMessage('Could not unlock vault. Check your master password and workspace.'); }
-  }
-  function lock() { if (activeVault.current) activeVault.current.active = false; activeVault.current = null; setEntries([]); setUnlocked(false); setPassword(''); setName(''); setUsername(''); setSecret(''); setMessage('Vault locked'); }
-  async function save(next: typeof entries) {
-    const vault = activeVault.current;
-    if (!vault || savingRef.current) return;
-    if (workspaceVaultKey(localStorage) !== vault.storageKey) { lock(); setMessage('Workspace changed. Unlock its vault before saving.'); return; }
-    savingRef.current = true; setSaving(true);
-    try {
-      await persistVault(localStorage, vault, next);
-      if (activeVault.current !== vault) return;
-      setEntries(next); setName(''); setUsername(''); setSecret(''); setMessage('Encrypted vault saved on this device');
-    } catch { setMessage('Vault was not saved. Check the workspace and browser storage, then try again.'); }
-    finally { savingRef.current = false; setSaving(false); }
-  }
-  const generate = () => { const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%'; const values = crypto.getRandomValues(new Uint32Array(24)); setSecret([...values].map(value => alphabet[value % alphabet.length]).join('')); };
-  return <section className="tool-card"><h2>Private vault</h2><p>Entries are encrypted in this browser with your master password. Losing that password means the data cannot be recovered.</p>{!unlocked ? <><input type="password" autoComplete="current-password" value={password} onChange={event => setPassword(event.target.value)} placeholder="Master password" aria-label="Master password" /><button disabled={!password} onClick={() => void unlock()}>Unlock or create vault</button></> : <><button onClick={lock}>Lock vault</button><div className="tool-row"><input value={name} onChange={event => setName(event.target.value)} placeholder="Entry name" /><input value={username} onChange={event => setUsername(event.target.value)} placeholder="Username" /></div><div className="tool-row"><input type={showSecret ? 'text' : 'password'} autoComplete="new-password" value={secret} onChange={event => setSecret(event.target.value)} placeholder="Password" aria-label="Entry password" /><button onClick={() => setShowSecret(value => !value)}>{showSecret ? 'Hide' : 'Show'}</button><button onClick={generate}>Generate</button></div><button disabled={saving || !name.trim() || !secret} onClick={() => void save([...entries, { name: name.trim(), username, password: secret }])}>{saving ? 'Saving…' : 'Save entry'}</button>{entries.map((entry, index) => <div className="activity" key={index}><b>{entry.name}</b><span>{entry.username}</span><button onClick={() => void navigator.clipboard.writeText(entry.password)}>Copy password</button></div>)}</>}{message && <div role="status">{message}</div>}</section>;
-}
-
-export function MathShieldTool() {
-  const startedAt = useRef(0);
-  const [challenge, setChallenge] = useState<{ id: string; question: string; options?: string[] } | null>(null); const [answer, setAnswer] = useState(''); const [result, setResult] = useState(''); const [busy, setBusy] = useState(false);
-  async function generate() {
-    setBusy(true); setResult(''); setChallenge(null); setAnswer('');
-    try {
-      const response = await fetch('/api/mathshield/challenge/generate', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ difficulty: 'easy', type: 'arithmetic' }) });
-      if (!response.ok) throw new Error(`Challenge service returned ${response.status}`);
-      const value = await response.json(); startedAt.current = Date.now(); setChallenge(value);
-    } catch (cause) { setResult(cause instanceof Error ? cause.message : 'Could not generate challenge'); }
-    finally { setBusy(false); }
-  }
-  async function verify() {
-    if (!challenge || !answer.trim() || busy) return;
-    setBusy(true);
-    try {
-      const response = await fetch('/api/mathshield/verification/verify', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ challengeId: challenge.id, answer: answer.trim(), timeTaken: Math.max(0, Date.now() - startedAt.current) }) });
-      const value = await response.json();
-      setResult(response.ok ? (value.success ? `Verified · ${value.riskLevel ?? 'unknown'} risk` : 'Verification failed. Generate another challenge to retry.') : value.message || 'Verification failed');
-      if (response.ok || response.status === 404) setChallenge(null);
-    } catch { setResult('Could not reach verification service. Try again.'); }
-    finally { setBusy(false); }
-  }
-  return <section className="tool-card"><h2>Human verification</h2><p>Generate and verify a challenge through the ForgeOS origin. The embeddable widget is available at <code>/shield.js</code>.</p><button disabled={busy} onClick={() => void generate()}>{busy ? 'Working…' : 'Generate challenge'}</button>{challenge && <><h3>{challenge.question}</h3>{challenge.options?.map(option => <button key={option} aria-pressed={answer === option} onClick={() => setAnswer(option)}>{option}</button>)}<input value={answer} onChange={event => setAnswer(event.target.value)} placeholder="Your answer" aria-label="Challenge answer" /><button className="primary" disabled={busy || !answer.trim()} onClick={() => void verify()}>Verify</button></>}{result && <pre role="status">{result}</pre>}</section>;
-}
+export { MathShieldTool } from './mathshield-tool';
 
 export function ImageDiffTool() {
   const first = useRef<HTMLCanvasElement>(null), second = useRef<HTMLCanvasElement>(null), diff = useRef<HTMLCanvasElement>(null);

@@ -37,3 +37,19 @@ These are working entry points, not full parity with every standalone product. T
 Install dependencies with `pnpm install`. The ForgeOS API requires PostgreSQL via `DATABASE_URL`; MathShield and PulseWatch run from their source folders. `pnpm build` checks the ForgeOS packages. For local web development, `pnpm --filter @forgeos/web dev -- --port 3002` loads valid credentials from `.env`; when those are still example values, it creates an ignored `apps/web/.env.local` with random credentials. Open that file to find the administrator password, then restart any web server that was already running. Production and Docker deployments must supply their own strong credentials.
 
 Do not run the standalone web dev server on port 3000 while Compose owns that port. The dev launcher checks that its configured API URL responds as ForgeOS; it exits with an explanation if another application is listening there. Use Compose for the complete one-port product. Run `node scripts/smoke.mjs` with `FORGEOS_ADMIN_PASSWORD` set to check the signed-in routes on the configured public address.
+
+## AgentShield
+
+AgentShield is a separate agent-policy module from MathShield human verification. Managed CDN is a separate proposed product. Enable it for an existing workspace under Customize modules. Its policy drafts and decision previews are available at /modules/agentshield; runtime isolation remains planned, and the retained cache field does not deploy CDN behavior. See [implementation and runtime requirements](docs/AGENTSHIELD.md).
+
+## Login mode
+
+Set FORGEOS_AUTH_MODE=password in .env for account email/password login, then recreate the API and web services. The default security-key mode requires configured WebAuthn origin, relying-party ID and trusted hardware attestation. Existing enrollment sessions do not become workspace sessions when modes change: sign in again. Physical-key approvals for agent registration and grants remain separate from ordinary dashboard login.
+
+## Tutorial, help and account screens
+
+Open /tutorial for onboarding, /help for all 15 tool guides, /help/desk for internal support tickets and /help/competitors for sourced UI comparisons. Profile, Current session and Activity log are available in navigation. See [user guide](docs/USER-GUIDE.md) for data visibility and logging limits.
+
+## Product designs and editor extension
+
+The primary repository guidance is ../AGENTS.md. See [product abstracts](docs/PRODUCT-CATALOG.md), [prioritized roadmap](docs/PRODUCT-ROADMAP.md) and [shared design](DESIGN.md). CommitCraft offers a local VSIX at /downloads/commitcraft-0.1.0.vsix; validation metadata and SHA-256 are alongside it. Other editor targets are not yet verified. StackForge and SnapDiff now use the extension-inspired workbench layout.

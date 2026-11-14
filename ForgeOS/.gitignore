@@ -6,3 +6,7 @@ dist/
 .env.local
 coverage/
 *.tsbuildinfo
+
+# Graphify machine-local cache and extraction intermediates
+graphify-out/cache/
+graphify-out/.graphify*

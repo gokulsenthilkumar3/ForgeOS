@@ -8,7 +8,7 @@ import {
   verifyAuthenticationResponse, verifyRegistrationResponse,
   type AuthenticationResponseJSON, type RegistrationResponseJSON,
 } from '@simplewebauthn/server';
-import { modules, type ModuleId, type Role } from '@forgeos/contracts';
+import { modules, validateShieldPolicy, type ModuleId, type Role } from '@forgeos/contracts';
 import { hashPassword, verifyPassword } from './password';
 import { requireHardwarePolicy, verifyHardwareAttestation, webAuthnConfig } from './webauthn-policy';
 import { AuthenticationThrottle } from './authentication-throttle';
@@ -193,6 +193,24 @@ export class PlatformService implements OnModuleInit, OnModuleDestroy {
         try {
           await client.query('ALTER TABLE audit_events ADD COLUMN IF NOT EXISTS hash_version smallint NOT NULL DEFAULT 1');
           await client.query('INSERT INTO forgeos_migrations(version) VALUES (6)');
+          await client.query('COMMIT');
+        } catch (error) { await client.query('ROLLBACK'); throw error; }
+      }
+      const supportMigration = await client.query('SELECT 1 FROM forgeos_migrations WHERE version = 7');
+      if (!supportMigration.rowCount) {
+        await client.query('BEGIN');
+        try {
+          await client.query(`CREATE TABLE IF NOT EXISTS support_tickets (
+            id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+            workspace_id uuid NOT NULL REFERENCES workspaces(id),
+            created_by uuid NOT NULL REFERENCES users(id),
+            subject text NOT NULL, description text NOT NULL,
+            category text NOT NULL CHECK (category IN ('question','problem','feature')),
+            status text NOT NULL DEFAULT 'open' CHECK (status IN ('open','in-progress','resolved')),
+            created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now()
+          )`);
+          await client.query('CREATE INDEX IF NOT EXISTS support_tickets_workspace_idx ON support_tickets(workspace_id, created_at DESC)');
+          await client.query('INSERT INTO forgeos_migrations(version) VALUES (7)');
           await client.query('COMMIT');
         } catch (error) { await client.query('ROLLBACK'); throw error; }
       }
@@ -696,10 +714,42 @@ export class PlatformService implements OnModuleInit, OnModuleDestroy {
     return result.rows;
   }
   async saveModuleRecord(moduleId: ModuleId, recordType: string, name: string, content: Record<string, unknown>, workspaceId: string | undefined, actor: AuthActor) {
-    const workspace = await this.workspace(workspaceId, actor, ['owner', 'admin', 'member']);
+    const workspace = await this.workspace(workspaceId, actor, moduleId === 'agentshield' ? ['owner', 'admin'] : ['owner', 'admin', 'member']);
     if (!workspace.moduleIds.includes(moduleId)) throw new NotFoundException('Module is disabled for this workspace');
+    if (moduleId === 'agentshield') {
+      if (recordType !== 'policy') throw new BadRequestException('AgentShield only accepts policy drafts');
+      try { content = validateShieldPolicy(content); }
+      catch (error) { throw new BadRequestException(error instanceof Error ? error.message : 'Invalid protection policy'); }
+    }
     const result = await this.pool.query('INSERT INTO module_records(workspace_id,module_id,record_type,name,content) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (workspace_id,module_id,record_type,name) DO UPDATE SET content = EXCLUDED.content, updated_at = now() RETURNING id, workspace_id AS "workspaceId", module_id AS "moduleId", record_type AS "recordType", name, content, created_at AS "createdAt", updated_at AS "updatedAt"', [workspace.id, moduleId, recordType, name, JSON.stringify(content)]);
     await this.log(workspace.id, 'module.record.saved', `${moduleId}:${result.rows[0].id}`, actor);
+    return result.rows[0];
+  }
+  async listSupportTickets(workspaceId: string | undefined, actor: AuthActor) {
+    const user = this.requireUser(actor);
+    const workspace = await this.workspace(workspaceId, actor);
+    const admin = ['owner', 'admin'].includes(workspace.role);
+    const result = await this.pool.query(`SELECT id,subject,description,category,status,created_by AS "createdBy",created_at AS "createdAt",updated_at AS "updatedAt"
+      FROM support_tickets WHERE workspace_id = $1 AND ($2::uuid IS NULL OR created_by = $2) ORDER BY created_at DESC LIMIT 100`, [workspace.id, admin ? null : user.userId]);
+    return result.rows;
+  }
+  async createSupportTicket(subject: string, description: string, category: string, workspaceId: string | undefined, actor: AuthActor) {
+    const user = this.requireUser(actor);
+    const workspace = await this.workspace(workspaceId, actor, ['owner', 'admin', 'member']);
+    if (!subject.trim() || subject.length > 120 || !description.trim() || description.length > 6000 || !['question','problem','feature'].includes(category)) throw new BadRequestException('Enter a subject, description and valid category');
+    const result = await this.pool.query(`INSERT INTO support_tickets(workspace_id,created_by,subject,description,category) VALUES ($1,$2,$3,$4,$5)
+      RETURNING id,subject,description,category,status,created_by AS "createdBy",created_at AS "createdAt",updated_at AS "updatedAt"`, [workspace.id,user.userId,subject.trim(),description.trim(),category]);
+    await this.log(workspace.id, 'support.ticket.created', result.rows[0].id, actor);
+    return result.rows[0];
+  }
+  async updateSupportTicket(ticketId: string, status: string, workspaceId: string | undefined, actor: AuthActor) {
+    this.requireUser(actor);
+    const workspace = await this.workspace(workspaceId, actor, ['owner', 'admin']);
+    if (!uuidPattern.test(ticketId) || !['open','in-progress','resolved'].includes(status)) throw new BadRequestException('Invalid ticket or status');
+    const result = await this.pool.query(`UPDATE support_tickets SET status = $3,updated_at = now() WHERE id = $1 AND workspace_id = $2
+      RETURNING id,subject,description,category,status,created_by AS "createdBy",created_at AS "createdAt",updated_at AS "updatedAt"`, [ticketId,workspace.id,status]);
+    if (!result.rows[0]) throw new NotFoundException('Ticket not found');
+    await this.log(workspace.id, 'support.ticket.updated', ticketId, actor);
     return result.rows[0];
   }
   async appendAuditEvent(workspaceId: string, action: string, target: string, actor?: AuthActor, payload: Record<string, unknown> = {}) {

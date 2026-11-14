@@ -5,11 +5,18 @@
   "packageManager": "pnpm@9.15.0",
   "scripts": {
     "dev": "turbo dev",
+    "graphify": "graphify update .",
     "build": "turbo build",
     "test": "node --test scripts/dev-web.test.mjs scripts/quality-engines.test.mjs scripts/delivery-engines.test.mjs scripts/vault-storage.test.mjs scripts/prompt-import.test.mjs apps/web/app/modules/[id]/csv-safety.test.mjs && turbo test",
     "lint": "turbo lint",
     "typecheck": "turbo typecheck"
   },
-  "devDependencies": { "turbo": "^2.3.3", "typescript": "^5.7.2" },
-  "engines": { "node": ">=20", "pnpm": ">=9" }
+  "devDependencies": {
+    "turbo": "^2.3.3",
+    "typescript": "^5.7.2"
+  },
+  "engines": {
+    "node": ">=20",
+    "pnpm": ">=9"
+  }
 }

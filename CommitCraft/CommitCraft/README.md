@@ -108,3 +108,7 @@ npm run dev
 ## License
 
 MIT © [Gokul Senthilkumar](https://github.com/gokulsenthilkumar3)
+
+## ForgeOS editor MVP
+
+An offline staged-review extension now lives in [extensions/commitcraft](../../extensions/commitcraft). Its local VSIX is available from the ForgeOS CommitCraft workbench. See [validation](../../extensions/commitcraft/VALIDATION.md) for actual VS Code evidence and untested editor targets. The earlier roadmap above describes the standalone source and does not establish full feature parity.

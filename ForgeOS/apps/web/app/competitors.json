@@ -1,0 +1,142 @@
+{
+  "reviewed": "2026-11-13",
+  "note": "Research mapping based on official product pages. Products overlap with parts of ForgeOS; none is claimed to replace every module. Links may require accounts or local installation. Product capabilities and access can change.",
+  "items": [
+    {
+      "area": "ForgeOS overall",
+      "name": "Port",
+      "overlap": "Developer portal and engineering workflow platform",
+      "url": "https://app.port.io/",
+      "access": "Sign-in UI",
+      "source": "https://www.port.io/"
+    },
+    {
+      "area": "ForgeOS overall",
+      "name": "Backstage",
+      "overlap": "Extensible software catalog and developer portal",
+      "url": "https://demo.backstage.io/",
+      "access": "Public demo",
+      "source": "https://backstage.io/"
+    },
+    {
+      "area": "CommitCraft",
+      "name": "GitLens / GitKraken",
+      "overlap": "Related Git workflow and AI-assisted developer interface",
+      "url": "https://www.gitkraken.com/gitlens",
+      "access": "Product / UI tour; editor installation required",
+      "source": "https://www.gitkraken.com/gitlens"
+    },
+    {
+      "area": "StackForge",
+      "name": "Bolt",
+      "overlap": "Related browser-based application creation interface",
+      "url": "https://bolt.new/",
+      "access": "Browser app; account may be required",
+      "source": "https://bolt.new/"
+    },
+    {
+      "area": "SnapDiff",
+      "name": "Percy",
+      "overlap": "Visual testing and review workflows",
+      "url": "https://percy.io/",
+      "access": "Product / account entry",
+      "source": "https://www.browserstack.com/percy"
+    },
+    {
+      "area": "Comparer",
+      "name": "Diffchecker",
+      "overlap": "Text and structured-content comparison",
+      "url": "https://www.diffchecker.com/",
+      "access": "Public web tool",
+      "source": "https://www.diffchecker.com/"
+    },
+    {
+      "area": "RegexForge",
+      "name": "regex101",
+      "overlap": "Regular-expression testing and explanation",
+      "url": "https://regex101.com/",
+      "access": "Public web tool",
+      "source": "https://regex101.com/"
+    },
+    {
+      "area": "Load Lab",
+      "name": "Grafana Cloud k6",
+      "overlap": "Load testing and results dashboards",
+      "url": "https://grafana.com/auth/sign-in/",
+      "access": "Account sign-in; open your Grafana Cloud stack",
+      "source": "https://grafana.com/products/cloud/performance-load-testing-k6/"
+    },
+    {
+      "area": "PromptVault",
+      "name": "Langfuse",
+      "overlap": "Prompt management, versions and experiments",
+      "url": "https://cloud.langfuse.com/",
+      "access": "Hosted UI; account required",
+      "source": "https://langfuse.com/docs/prompt-management/get-started"
+    },
+    {
+      "area": "ProbeAI",
+      "name": "Promptfoo",
+      "overlap": "Model/prompt evaluation and result inspection",
+      "url": "https://www.promptfoo.dev/docs/usage/web-ui/",
+      "access": "Local UI setup instructions; not a hosted demo",
+      "source": "https://www.promptfoo.dev/docs/usage/web-ui/"
+    },
+    {
+      "area": "PulseWatch",
+      "name": "Better Stack",
+      "overlap": "Uptime monitoring and incident interfaces",
+      "url": "https://betterstack.com/users/sign-in",
+      "access": "Account sign-in",
+      "source": "https://betterstack.com/uptime"
+    },
+    {
+      "area": "DBPulse",
+      "name": "Metabase",
+      "overlap": "Adjacent SQL/data exploration and dashboard interface; not a direct audit-log replacement",
+      "url": "https://www.metabase.com/demo",
+      "access": "Product demo entry",
+      "source": "https://www.metabase.com/demo"
+    },
+    {
+      "area": "GLBViewer",
+      "name": "glTF Viewer",
+      "overlap": "Local glTF/GLB model inspection",
+      "url": "https://gltf-viewer.donmccurdy.com/",
+      "access": "Public web tool",
+      "source": "https://gltf-viewer.donmccurdy.com/"
+    },
+    {
+      "area": "CraftCV",
+      "name": "Reactive Resume",
+      "overlap": "Resume creation and export",
+      "url": "https://rxresu.me/",
+      "access": "Product / app entry",
+      "source": "https://rxresu.me/"
+    },
+    {
+      "area": "VaultIQ",
+      "name": "Bitwarden",
+      "overlap": "Credential vault management",
+      "url": "https://vault.bitwarden.com/",
+      "access": "Web vault; account required",
+      "source": "https://bitwarden.com/"
+    },
+    {
+      "area": "MathShield",
+      "name": "Cloudflare Turnstile",
+      "overlap": "Website visitor/bot verification",
+      "url": "https://dash.cloudflare.com/",
+      "access": "Dashboard; account required",
+      "source": "https://www.cloudflare.com/products/turnstile/"
+    },
+    {
+      "area": "AgentShield",
+      "name": "Cloudflare AI Gateway",
+      "overlap": "Adjacent AI gateway controls; not proof of sandbox containment or a complete A2A runtime",
+      "url": "https://dash.cloudflare.com/",
+      "access": "Dashboard; account required",
+      "source": "https://developers.cloudflare.com/ai-gateway/"
+    }
+  ]
+}

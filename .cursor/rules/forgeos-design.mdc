@@ -1,0 +1,11 @@
+---
+description: ForgeOS priorities, product boundaries and shared workbench design
+alwaysApply: true
+---
+
+- Follow the repository AGENTS.md as the primary local guide.
+- Before creating a component, read DESIGN.md and ForgeOS/DESIGN.md.
+- CommitCraft editor extension is the first implementation priority.
+- Separate human verification, picture matching, agent containment and managed CDN.
+- Use the relevant specification under ForgeOS/docs; label proposed capabilities honestly.
+- Preserve unrelated work and report verification limits.

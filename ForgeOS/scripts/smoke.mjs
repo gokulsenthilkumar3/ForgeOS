@@ -58,9 +58,10 @@ const enrollmentLogin = await request('/api/session', {
   body: JSON.stringify({ action: 'password', email, password: accountPassword }),
 });
 const enrollmentCookie = enrollmentLogin.headers.get('set-cookie')?.split(';', 1)[0];
-assert(enrollmentCookie?.startsWith('forgeos_session=u.'), 'Password must issue enrollment-only session');
-await expectStatus('/api/v1/overview', 403, { headers: { cookie: enrollmentCookie } });
-await expectStatus('/', 307, { headers: { cookie: enrollmentCookie } });
+const passwordMode = setupStatus.authenticationMode === 'password';
+assert(enrollmentCookie?.startsWith(`forgeos_session=${passwordMode ? 'p' : 'u'}.`), 'Password session must match the configured authentication mode');
+await expectStatus('/api/v1/overview', passwordMode ? 200 : 403, { headers: { cookie: enrollmentCookie } });
+await expectStatus('/', passwordMode ? 200 : 307, { headers: { cookie: enrollmentCookie } });
 
 // This CI fixture has the test-only signing secret, so it can exercise routing
 // behind a key-authenticated session. It does not substitute for a real FIDO2
@@ -91,4 +92,14 @@ for (const id of overview.workspace.moduleIds) {
   assert(Array.isArray(await records.json()), `${id} records did not return a list`);
 }
 
-console.log(`ForgeOS smoke passed: one origin, ${overview.workspace.moduleIds.length} module pages, password-only denial, signed-agent denial, PulseWatch, and MathShield widget. Physical-key ceremony needs a real trusted key.`);
+for (const path of ['/help','/tutorial','/help/desk','/help/competitors','/settings/profile','/settings/sessions','/activity']) {
+  await expectStatus(path, 307);
+  await request(path, { headers: auth });
+}
+const support = await request(`/api/v1/support/tickets?workspaceId=${overview.workspace.id}`, { headers: auth });
+assert(Array.isArray(await support.json()), 'Help desk must return accessible tickets');
+const currentSession = await (await request('/api/v1/auth/session', { headers: auth })).json();
+assert.equal(currentSession.session?.method, 'security-key');
+assert(currentSession.session?.expiresAt, 'Current session expiry is missing');
+
+console.log(`ForgeOS smoke passed: one origin, ${overview.workspace.moduleIds.length} module pages, ${passwordMode ? 'password login' : 'password-only denial'}, signed-agent denial, PulseWatch, and MathShield widget. Physical-key ceremony needs a real trusted key.`);

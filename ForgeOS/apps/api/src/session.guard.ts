@@ -2,7 +2,7 @@ import { CanActivate, ExecutionContext, Injectable, ServiceUnavailableException,
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { PlatformService, type AuthActor } from './platform.service';
 
-type SessionRequest = { path: string; method: string; headers: { cookie?: string }; forgeosAuth?: AuthActor };
+type SessionRequest = { path: string; method: string; headers: { cookie?: string }; forgeosAuth?: AuthActor; forgeosSession?: { expiresAt: string; method: string } };
 const userIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 @Injectable()
@@ -37,6 +37,9 @@ export class SessionGuard implements CanActivate {
         throw new UnauthorizedException('Physical-key sign-in expired');
       }
       payload = `webauthn:${userId}:${parts[2]}:${expires}`;
+    } else if (parts[0] === 'p' && parts.length === 4 && userIdPattern.test(parts[1]) && process.env.FORGEOS_AUTH_MODE === 'password') {
+      [, userId, expires, signature] = parts;
+      payload = `password:${userId}:${expires}`;
     } else if (parts[0] === 'u' && parts.length === 4 && userIdPattern.test(parts[1])) {
       [, userId, expires, signature] = parts;
       payload = `user:${userId}:${expires}`;
@@ -57,6 +60,7 @@ export class SessionGuard implements CanActivate {
       ].includes(request.path))
     )) throw new UnauthorizedException('Physical-key sign-in required');
     request.forgeosAuth = await this.platform.actorForUser(userId);
+    request.forgeosSession = { expiresAt: new Date(Number(expires)).toISOString(), method: parts[0] === 'w' ? 'security-key' : parts[0] === 'p' ? 'password' : 'enrollment' };
     return true;
   }
 }
