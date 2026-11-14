@@ -7,9 +7,9 @@ const secret = process.env.FORGEOS_SESSION_SECRET;
 assert(password, 'FORGEOS_ADMIN_PASSWORD is required for smoke test');
 assert(secret && secret.length >= 32, 'FORGEOS_SESSION_SECRET is required for smoke test');
 
-async function request(path, options = {}) {
+async function request(path, options = {}, expectedStatus = 200) {
   const response = await fetch(new URL(path, origin), { redirect: 'manual', signal: AbortSignal.timeout(15000), ...options });
-  assert.equal(response.status, 200, `${path} returned ${response.status}`);
+  assert.equal(response.status, expectedStatus, `${path} returned ${response.status}, expected ${expectedStatus}`);
   return response;
 }
 
@@ -44,7 +44,7 @@ if (setupStatus.ownerRequired) {
   const setup = await request('/api/v1/auth/setup', {
     method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ email, password: accountPassword, bootstrapPassword: password }),
-  });
+  }, 201);
   ownerId = (await setup.json()).userId;
 }
 assert(ownerId, 'Existing installations require FORGEOS_SMOKE_USER_ID; CI creates a temporary owner');
@@ -81,7 +81,8 @@ await request('/', { headers: auth });
 await request('/api/v1/health', { headers: auth });
 await request('/api/v1/workspaces', { headers: auth });
 await expectStatus(`/api/v1/agent-access/projects?workspaceId=${overview.workspace.id}`, 401);
-await waitFor('/api/pulsewatch/endpoints', { headers: auth });
+await expectStatus('/api/pulsewatch/endpoints', 400, { headers: auth });
+await waitFor(`/api/pulsewatch/endpoints?workspaceId=${overview.workspace.id}`, { headers: auth });
 await waitFor('/shield.js');
 for (const id of overview.workspace.moduleIds) {
   const page = await request(`/modules/${id}`, { headers: auth });
