@@ -1,18 +1,19 @@
 import { BadRequestException, Body, Controller, Get, Param, Patch, Post, Query, Req } from '@nestjs/common';
-import { IsArray, IsBoolean, IsEmail, IsIn, IsObject, IsOptional, IsString, IsUUID, Length } from 'class-validator';
+import { ArrayMaxSize, IsArray, IsBoolean, IsEmail, IsIn, IsObject, IsOptional, IsString, IsUUID, Length } from 'class-validator';
 import type { AuthenticationResponseJSON, RegistrationResponseJSON } from '@simplewebauthn/server';
 import { modules, type ModuleId } from '@forgeos/contracts';
 import { PlatformService, type AuthActor } from './platform.service';
 
 type AuthRequest = { forgeosAuth: AuthActor };
-class OwnerInput { @IsEmail() email!: string; @IsString() @Length(12, 256) password!: string; @IsString() @Length(1, 256) bootstrapPassword!: string; }
+class OwnerInput { @IsEmail() @Length(3, 254) email!: string; @IsString() @Length(12, 256) password!: string; @IsString() @Length(1, 256) bootstrapPassword!: string; }
+class BootstrapVerifyInput { @IsString() @Length(1, 256) bootstrapPassword!: string; }
 class LoginInput { @IsEmail() @Length(3, 254) email!: string; @IsString() @Length(1, 256) password!: string; }
-class InvitationInput { @IsEmail() email!: string; @IsIn(['admin', 'member', 'auditor']) role!: 'admin' | 'member' | 'auditor'; }
-class AcceptInvitationInput { @IsString() token!: string; @IsString() password!: string; }
+class InvitationInput { @IsEmail() @Length(3, 254) email!: string; @IsIn(['admin', 'member', 'auditor']) role!: 'admin' | 'member' | 'auditor'; }
+class AcceptInvitationInput { @IsString() @Length(43, 43) token!: string; @IsString() @Length(12, 256) password!: string; }
 class RoleInput { @IsIn(['owner', 'admin', 'member', 'auditor']) role!: 'owner' | 'admin' | 'member' | 'auditor'; }
 class WebAuthnRegisterOptionsInput {
   @IsString() @Length(1, 80) label!: string;
-  @IsOptional() @IsString() migrationPassword?: string;
+  @IsOptional() @IsString() @Length(12, 256) migrationPassword?: string;
 }
 class WebAuthnRegisterVerifyInput {
   @IsUUID() challengeId!: string;
@@ -30,9 +31,9 @@ class SupportTicketInput { @IsString() @Length(1, 120) subject!: string; @IsStri
 class SupportStatusInput { @IsIn(['open','in-progress','resolved']) status!: string; }
 
 class WorkspaceInput { @IsString() @Length(1, 100) name!: string; }
-class ProjectInput { @IsString() @Length(1, 100) name!: string; @IsArray() @IsIn(modules.map(module => module.id), { each: true }) moduleIds!: ModuleId[]; }
-class ModulesInput { @IsArray() @IsIn(modules.map(module => module.id), { each: true }) moduleIds!: ModuleId[]; }
-class RunInput { @IsString() projectId!: string; @IsIn(modules.map(module => module.id)) moduleId!: ModuleId; }
+class ProjectInput { @IsString() @Length(1, 100) name!: string; @IsArray() @ArrayMaxSize(modules.length) @IsIn(modules.map(module => module.id), { each: true }) moduleIds!: ModuleId[]; }
+class ModulesInput { @IsArray() @ArrayMaxSize(modules.length) @IsIn(modules.map(module => module.id), { each: true }) moduleIds!: ModuleId[]; }
+class RunInput { @IsUUID() projectId!: string; @IsIn(modules.map(module => module.id)) moduleId!: ModuleId; }
 class CompleteInput { @IsBoolean() passed!: boolean; }
 class ModuleRecordInput { @IsString() @Length(1, 40) recordType!: string; @IsString() @Length(1, 100) name!: string; @IsObject() content!: Record<string, unknown>; }
 
@@ -42,6 +43,7 @@ export class PlatformController {
   @Get('health') health() { return { status: 'ok', mode: process.env.FORGEOS_MODE ?? 'self-hosted' }; }
   @Get('auth/setup') async setupStatus() { return { ownerRequired: await this.platform.ownerRequired(), authenticationMode: process.env.FORGEOS_AUTH_MODE === 'password' ? 'password' : 'security-key' }; }
   @Post('auth/setup') setup(@Body() input: OwnerInput) { return this.platform.setupOwner(input.email, input.password, input.bootstrapPassword); }
+  @Post('auth/setup/verify') verifyBootstrap(@Body() input: BootstrapVerifyInput) { return this.platform.verifyBootstrapPassword(input.bootstrapPassword); }
   @Post('auth/login') login(@Body() input: LoginInput) { return this.platform.loginUser(input.email, input.password); }
   @Post('auth/accept-invite') acceptInvite(@Body() input: AcceptInvitationInput) { return this.platform.acceptInvitation(input.token, input.password); }
   @Get('auth/session') session(@Req() request: AuthRequest) { return { ...request.forgeosAuth, session: request.forgeosSession }; }

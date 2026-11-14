@@ -20,7 +20,14 @@ async function freePort() {
 test('isolates monitors and preserves unscoped legacy incidents in the personal workspace', async () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'forgeos-pulsewatch-'));
   const dataFile = path.join(directory, 'pulsewatch.json');
-  fs.writeFileSync(dataFile, JSON.stringify({ endpoints: [], incidents: [{ id: 'legacy-incident', endpointId: 'old', endpointName: 'Old', error: 'Down', startedAt: new Date().toISOString(), resolvedAt: null }], notifications: [] }));
+  fs.writeFileSync(dataFile, JSON.stringify({
+    endpoints: [{
+      id: 'legacy-endpoint', workspaceId: personal, name: 'Legacy', url: 'http://127.0.0.1',
+      method: 'GET', interval: 60, timeout: 10, status: 'DOWN', checks: [],
+    }],
+    incidents: [{ id: 'legacy-incident', endpointId: 'old', endpointName: 'Old', error: 'Down', startedAt: new Date().toISOString(), resolvedAt: null }],
+    notifications: [],
+  }));
   const port = await freePort();
   const origin = `http://127.0.0.1:${port}`;
   const child = spawn(process.execPath, [path.join(__dirname, 'index.js')], {
@@ -41,19 +48,33 @@ test('isolates monitors and preserves unscoped legacy incidents in the personal 
     assert.equal(legacy.length, 1);
     assert.equal(isolatedLegacy.length, 0);
 
-    const created = await fetch(`${origin}/api/endpoints?workspaceId=${personal}`, {
+    const privateTarget = await fetch(`${origin}/api/endpoints?workspaceId=${personal}`, {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ name: 'Local check', url: `${origin}/api/stats?workspaceId=${personal}` }),
     });
-    assert.equal(created.status, 201);
-    const endpoint = await created.json();
+    assert.equal(privateTarget.status, 400);
+    const badMethod = await fetch(`${origin}/api/endpoints?workspaceId=${personal}`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Unsupported method', url: 'https://example.com', method: 'TRACE' }),
+    });
+    assert.equal(badMethod.status, 400);
     const own = await fetch(`${origin}/api/endpoints?workspaceId=${personal}`).then(response => response.json());
     const foreign = await fetch(`${origin}/api/endpoints?workspaceId=${other}`).then(response => response.json());
     assert.equal(own.length, 1);
     assert.equal(foreign.length, 0);
-    assert.equal((await fetch(`${origin}/api/endpoints/${endpoint.id}?workspaceId=${other}`)).status, 404);
-    assert.equal((await fetch(`${origin}/api/endpoints/${endpoint.id}?workspaceId=${other}`, { method: 'DELETE' })).status, 404);
-    assert.equal((await fetch(`${origin}/api/endpoints/${endpoint.id}?workspaceId=${personal}`)).status, 200);
+    assert.equal((await fetch(`${origin}/api/endpoints/legacy-endpoint?workspaceId=${other}`)).status, 404);
+    assert.equal((await fetch(`${origin}/api/endpoints/legacy-endpoint?workspaceId=${other}`, { method: 'DELETE' })).status, 404);
+    assert.equal((await fetch(`${origin}/api/endpoints/legacy-endpoint?workspaceId=${personal}`)).status, 200);
+    const unsafeUpdate = await fetch(`${origin}/api/endpoints/legacy-endpoint?workspaceId=${personal}`, {
+      method: 'PUT', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ url: 'http://127.0.0.1:4000' }),
+    });
+    assert.equal(unsafeUpdate.status, 400);
+    const rename = await fetch(`${origin}/api/endpoints/legacy-endpoint?workspaceId=${personal}`, {
+      method: 'PUT', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Renamed' }),
+    });
+    assert.equal(rename.status, 200);
   } finally {
     child.kill();
     fs.rmSync(directory, { recursive: true, force: true });

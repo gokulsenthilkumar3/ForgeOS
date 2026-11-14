@@ -30,13 +30,25 @@ describe('physical-key WebAuthn policy', () => {
       .toThrow(ServiceUnavailableException);
     expect(() => webAuthnConfig({ NODE_ENV: 'production', FORGEOS_WEBAUTHN_RP_ID: 'localhost', FORGEOS_WEBAUTHN_ORIGIN: 'http://localhost:3000' }))
       .toThrow(ServiceUnavailableException);
-    expect(webAuthnConfig({
+    expect(() => webAuthnConfig({
       NODE_ENV: 'production', FORGEOS_WEBAUTHN_RP_ID: 'localhost',
       FORGEOS_WEBAUTHN_ORIGIN: 'http://localhost:3000', FORGEOS_WEBAUTHN_ALLOW_LOCALHOST_HTTP: 'true',
-    })).toMatchObject({ rpID: 'localhost', origin: 'http://localhost:3000' });
+    })).toThrow(ServiceUnavailableException);
+    expect(() => webAuthnConfig({
+      NODE_ENV: 'production', FORGEOS_WEBAUTHN_RP_ID: 'localhost',
+      FORGEOS_WEBAUTHN_ORIGIN: 'https://localhost:3000',
+    })).toThrow(ServiceUnavailableException);
     expect(() => webAuthnConfig({
       NODE_ENV: 'production', FORGEOS_WEBAUTHN_RP_ID: 'example.com',
       FORGEOS_WEBAUTHN_ORIGIN: 'http://example.com', FORGEOS_WEBAUTHN_ALLOW_LOCALHOST_HTTP: 'true',
+    })).toThrow(ServiceUnavailableException);
+    expect(webAuthnConfig({
+      NODE_ENV: 'production', FORGEOS_WEBAUTHN_RP_ID: 'example.com',
+      FORGEOS_WEBAUTHN_ORIGIN: 'https://example.com',
+    })).toMatchObject({ rpID: 'example.com', origin: 'https://example.com' });
+    expect(() => webAuthnConfig({
+      NODE_ENV: 'production', FORGEOS_WEBAUTHN_RP_ID: '203.0.113.1',
+      FORGEOS_WEBAUTHN_ORIGIN: 'https://203.0.113.1',
     })).toThrow(ServiceUnavailableException);
   });
 

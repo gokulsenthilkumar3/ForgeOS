@@ -29,6 +29,7 @@ describe('SessionGuard', () => {
   it('leaves only explicit bootstrap and authentication endpoints public', async () => {
     expect(await guard.canActivate(context('/v1/health'))).toBe(true);
     expect(await guard.canActivate(context('/v1/auth/setup'))).toBe(true);
+    expect(await guard.canActivate(context('/v1/auth/setup/verify', undefined, 'POST'))).toBe(true);
     expect(await guard.canActivate(context('/v1/auth/webauthn/authenticate/options', undefined, 'POST'))).toBe(true);
     await expect(guard.canActivate(context('/v1/workspaces'))).rejects.toThrow(UnauthorizedException);
   });

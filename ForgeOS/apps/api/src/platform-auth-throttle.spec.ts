@@ -50,4 +50,24 @@ describe('PlatformService authentication throttling', () => {
     await expect(service.webAuthnAuthenticationOptions('qa@example.test')).rejects.toMatchObject({ status: 429 });
     expect(query).toHaveBeenCalledTimes(10);
   });
+
+  it('limits failed bootstrap-password checks before password-session issuance', async () => {
+    const originalAdminPassword = process.env.FORGEOS_ADMIN_PASSWORD;
+    const originalSessionSecret = process.env.FORGEOS_SESSION_SECRET;
+    process.env.FORGEOS_ADMIN_PASSWORD = 'configured-bootstrap-password';
+    process.env.FORGEOS_SESSION_SECRET = 'forgeos-test-session-secret-longer-than-32-chars';
+    query.mockResolvedValue({ rows: [{ required: true }] });
+    try {
+      for (let attempt = 0; attempt < 10; attempt++) {
+        await expect(service.verifyBootstrapPassword('wrong-password')).rejects.toThrow(UnauthorizedException);
+      }
+      await expect(service.verifyBootstrapPassword('wrong-password')).rejects.toMatchObject({ status: 429 });
+      expect(query).toHaveBeenCalledTimes(11);
+    } finally {
+      if (originalAdminPassword === undefined) delete process.env.FORGEOS_ADMIN_PASSWORD;
+      else process.env.FORGEOS_ADMIN_PASSWORD = originalAdminPassword;
+      if (originalSessionSecret === undefined) delete process.env.FORGEOS_SESSION_SECRET;
+      else process.env.FORGEOS_SESSION_SECRET = originalSessionSecret;
+    }
+  });
 });

@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { useLlm } from './use-llm';
+import { sanitizeCsvCell } from './csv-safety.mjs';
 
 function ModelControls({ llm }: { llm: ReturnType<typeof useLlm> }) {
   return <div className="tool-row"><select value={llm.provider} onChange={event => { const provider = event.target.value as 'openai'|'anthropic'; llm.setProvider(provider); llm.setModel(provider === 'openai' ? 'gpt-4o-mini' : 'claude-3-5-haiku-latest'); }}><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option></select><input value={llm.model} onChange={event => llm.setModel(event.target.value)} placeholder="Model" /><input type="password" value={llm.apiKey} onChange={event => llm.setApiKey(event.target.value)} placeholder="Provider API key" /></div>;
@@ -39,4 +40,36 @@ export function LoadScriptTool() {
   const [url, setUrl] = useState('https://example.com'); const [vus, setVus] = useState(10); const [duration, setDuration] = useState('30s');
   const script = `import http from 'k6/http';\nimport { check } from 'k6';\n\nexport const options = { vus: ${Math.max(1, vus)}, duration: '${duration.replace(/[^0-9smh]/g, '')}' };\n\nexport default function () {\n  const response = http.get('${url.replaceAll("'", "%27")}');\n  check(response, { 'status is 2xx': r => r.status >= 200 && r.status < 300 });\n}\n`;
   return <section className="tool-card"><h2>Build a K6 test</h2><p>Create a performance-test script for a public endpoint. Execution requires a configured K6 worker.</p><div className="tool-row"><input value={url} onChange={event => setUrl(event.target.value)} placeholder="Target URL" /><input type="number" min="1" max="1000" value={vus} onChange={event => setVus(Number(event.target.value))} aria-label="Virtual users" /><input value={duration} onChange={event => setDuration(event.target.value)} aria-label="Duration" /></div><pre>{script}</pre><button onClick={() => download('forgeos-load-test.js', script, 'text/javascript')}>Download K6 script</button></section>;
+}
+
+type Endpoint = { id: string; name: string; url: string; status: string; latency: number | null; uptime24h: number; lastChecked: string | null };
+type Incident = { id: string; endpointName: string; error: string; startedAt: string; resolvedAt: string | null };
+type MonitorNotification = { id: string; message: string; type: string; ts: string; read: boolean };
+type MonitorStats = { total: number; up: number; down: number; uptime24h: number; openIncidents: number };
+export function PulseWatchTool() {
+  const [endpoints, setEndpoints] = useState<Endpoint[]>([]); const [incidents, setIncidents] = useState<Incident[]>([]); const [name, setName] = useState(''); const [url, setUrl] = useState(''); const [message, setMessage] = useState('');
+  const [notifications, setNotifications] = useState<MonitorNotification[]>([]);
+  const [stats, setStats] = useState<MonitorStats | null>(null);
+  const scoped = (path: string) => `${path}?workspaceId=${encodeURIComponent(localStorage.getItem('forgeos-workspace-id') || '')}`;
+  async function refresh() { try { const [a, b, c, d] = await Promise.all([fetch(scoped('/api/pulsewatch/endpoints')), fetch(scoped('/api/pulsewatch/incidents')), fetch(scoped('/api/pulsewatch/notifications')), fetch(scoped('/api/pulsewatch/stats'))]); if (![a,b,c,d].every(response => response.ok)) throw new Error('Monitoring service is unavailable for this workspace'); setEndpoints(await a.json()); setIncidents(await b.json()); setNotifications(await c.json()); setStats(await d.json()); setMessage(''); } catch (error) { setMessage(error instanceof Error ? error.message : 'Could not load monitors'); } }
+  useEffect(() => { void refresh(); const timer = setInterval(() => void refresh(), 15000); return () => clearInterval(timer); }, []);
+  async function create() { try { const response = await fetch(scoped('/api/pulsewatch/endpoints'), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name, url, method: 'GET', interval: 60, timeout: 10 }) }); if (!response.ok) throw new Error((await response.json()).error || 'Could not add monitor'); setName(''); setUrl(''); await refresh(); } catch (error) { setMessage(error instanceof Error ? error.message : 'Could not add monitor'); } }
+  async function action(id: string, kind: 'check'|'delete') { try { const response = await fetch(scoped(`/api/pulsewatch/endpoints/${id}${kind === 'check' ? '/check' : ''}`), { method: kind === 'check' ? 'POST' : 'DELETE' }); if (!response.ok) throw new Error((await response.json()).error || 'Monitor operation failed'); await refresh(); } catch (error) { setMessage(error instanceof Error ? error.message : 'Monitor operation failed'); } }
+  async function markRead() { try { const response = await fetch(scoped('/api/pulsewatch/notifications/read-all'), { method: 'POST' }); if (!response.ok) throw new Error('Could not mark notifications read'); await refresh(); } catch (error) { setMessage(error instanceof Error ? error.message : 'Could not mark notifications read'); } }
+  return <section className="tool-card"><h2>Uptime monitors</h2><p>Add an HTTP endpoint, check it now, and inspect incidents. Checks continue in the private monitor service.</p><div className="tool-row"><input value={name} onChange={event => setName(event.target.value)} placeholder="Monitor name" /><input type="url" value={url} onChange={event => setUrl(event.target.value)} placeholder="https://service.example.com/health" /></div><button className="primary" disabled={!name || !url} onClick={() => void create()}>Add monitor</button><button onClick={() => void refresh()}>Refresh</button>{message && <div role="status">{message}</div>}
+    {stats && <div className="activity"><b>Workspace status</b><span>{stats.up} up · {stats.down} down · {stats.openIncidents} open incidents · {stats.uptime24h}% uptime (24h)</span></div>}
+    {endpoints.map(endpoint => <div className="activity" key={endpoint.id}><b>{endpoint.name}</b><span>{endpoint.status} · {endpoint.latency ?? '����'} ms · {endpoint.uptime24h}% uptime<br />{endpoint.url}</span><button onClick={() => void action(endpoint.id, 'check')}>Check now</button><button onClick={() => void action(endpoint.id, 'delete')}>Remove</button></div>)}
+    <h3>Incidents</h3>{incidents.length ? incidents.map(incident => <div className="activity" key={incident.id}><b>{incident.endpointName}</b><span>{incident.error}</span><time>{incident.resolvedAt ? 'Resolved' : 'Open'}</time></div>) : <p>No incidents recorded.</p>}
+    <h3>Notifications</h3>{notifications.some(item => !item.read) && <button onClick={() => void markRead()}>Mark all read</button>}{notifications.length ? notifications.map(item => <div className="activity" key={item.id}><b>{item.type}</b><span>{item.message}</span><time>{new Date(item.ts).toLocaleString()}{item.read ? ' · Read' : ' · New'}</time></div>) : <p>No notifications recorded.</p>}
+  </section>;
+}
+
+type AuditItem = { id: string; action: string; target: string; hash: string; createdAt: string };
+export function AuditExplorerTool() {
+  const [items, setItems] = useState<AuditItem[]>([]); const [query, setQuery] = useState(''); const [message, setMessage] = useState('');
+  async function refresh() { try { const selected = localStorage.getItem('forgeos-workspace-id'); const response = await fetch(`/api/v1/overview${selected ? `?workspaceId=${encodeURIComponent(selected)}` : ''}`); if (!response.ok) throw new Error(`API returned ${response.status}`); const overview = await response.json(); setItems(overview.audit || []); setMessage(''); } catch (error) { setMessage(error instanceof Error ? error.message : 'Could not load audit events'); } }
+  useEffect(() => { void refresh(); }, []);
+  const visible = items.filter(item => `${item.action} ${item.target}`.toLowerCase().includes(query.toLowerCase()));
+  const exportCsv = () => download('forgeos-audit.csv', ['id,action,target,createdAt,hash', ...visible.map(item => [item.id,item.action,item.target,item.createdAt,item.hash].map(value => `"${sanitizeCsvCell(value)}"`).join(','))].join('\n'), 'text/csv');
+  return <section className="tool-card"><h2>Workspace audit explorer</h2><p>Inspect events generated by ForgeOS projects and runs. Database connector activity appears here once a connector is configured.</p><div className="tool-row"><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Filter events" /><button onClick={() => void refresh()}>Refresh</button><button disabled={!visible.length} onClick={exportCsv}>Export CSV</button></div>{message && <div role="status">{message}</div>}{visible.map(item => <div className="activity" key={item.id}><b>{item.action}</b><span>{item.target}<br /><small>SHA-256 {item.hash}</small></span><time>{new Date(item.createdAt).toLocaleString()}</time></div>)}{!visible.length && <p>No events found.</p>}</section>;
 }

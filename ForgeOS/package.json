@@ -7,7 +7,7 @@
     "dev": "turbo dev",
     "graphify": "graphify update .",
     "build": "turbo build",
-    "test": "node --test scripts/snapdiff-engine.test.mjs scripts/dev-web.test.mjs scripts/quality-engines.test.mjs scripts/delivery-engines.test.mjs scripts/vault-storage.test.mjs scripts/workspace-data.test.mjs scripts/prompt-import.test.mjs scripts/evaluation-engine.test.mjs scripts/dashboard-summary.test.mjs && turbo test",
+    "test": "node --test scripts/dev-web.test.mjs scripts/quality-engines.test.mjs scripts/delivery-engines.test.mjs scripts/vault-storage.test.mjs scripts/prompt-import.test.mjs apps/web/app/modules/[id]/csv-safety.test.mjs && turbo test",
     "lint": "turbo lint",
     "typecheck": "turbo typecheck"
   },

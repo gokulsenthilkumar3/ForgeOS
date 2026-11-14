@@ -1,4 +1,5 @@
 import { BadRequestException, ServiceUnavailableException } from '@nestjs/common';
+import { isIP } from 'node:net';
 import type { VerifiedRegistrationResponse } from '@simplewebauthn/server';
 import { convertCertBufferToPEM, decodeAttestationObject, validateCertificatePath } from '@simplewebauthn/server/helpers';
 
@@ -22,11 +23,11 @@ export function webAuthnConfig(env: NodeJS.ProcessEnv = process.env): WebAuthnCo
   let parsedOrigin: URL;
   try { parsedOrigin = new URL(origin); }
   catch { throw new ServiceUnavailableException('WebAuthn origin is not configured'); }
-  const localhostHttp = rpID === 'localhost' && /^http:\/\/localhost:[0-9]+$/.test(origin);
-  const allowLocalhostHttp = !isProduction || env.FORGEOS_WEBAUTHN_ALLOW_LOCALHOST_HTTP === 'true';
-  if (!rpID || !/^[a-z0-9.-]+$/.test(rpID) ||
+  const localhostHttp = !isProduction && rpID === 'localhost' && /^http:\/\/localhost:[0-9]+$/.test(origin);
+  const invalidProductionRp = isProduction && (rpID === 'localhost' || rpID.endsWith('.localhost') || isIP(rpID) !== 0);
+  if (!rpID || invalidProductionRp || !/^[a-z0-9.-]+$/.test(rpID) ||
       parsedOrigin.origin !== origin || parsedOrigin.username || parsedOrigin.password ||
-      (parsedOrigin.protocol !== 'https:' && !(localhostHttp && allowLocalhostHttp)) ||
+      (parsedOrigin.protocol !== 'https:' && !localhostHttp) ||
       !(parsedOrigin.hostname === rpID || parsedOrigin.hostname.endsWith(`.${rpID}`))) {
     throw new ServiceUnavailableException('WebAuthn relying party is not configured');
   }

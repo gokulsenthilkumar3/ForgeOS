@@ -48,8 +48,9 @@ jobs:
             echo "$key=$value" >> "$GITHUB_ENV"
           done
           echo 'FORGEOS_PUBLIC_PORT=3000' >> "$GITHUB_ENV"
-          # The official Quay image is pinned for disposable CI storage only.
-          echo 'FORGEOS_MINIO_IMAGE=quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z' >> "$GITHUB_ENV"
+          echo 'FORGEOS_MINIO_IMAGE=forgeos-minio-ci:local' >> "$GITHUB_ENV"
+      - name: Build disposable storage from pinned patched source
+        run: docker build -f ForgeOS/scripts/minio-ci.Dockerfile -t forgeos-minio-ci:local ForgeOS/scripts
       - name: Start private services and one public web port
         run: docker compose -f ForgeOS/docker-compose.yml --project-directory ForgeOS up -d --build
       - name: Assert only port 3000 is published
