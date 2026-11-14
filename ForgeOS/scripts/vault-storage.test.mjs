@@ -1,6 +1,14 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { openVault, persistVault } from '../apps/web/app/modules/[id]/vault-storage.mjs';
+import { readFile } from 'node:fs/promises';
+import ts from 'typescript';
+
+// Execute the application's implementation on Node 20 without maintaining a copy.
+const source = await readFile(new URL('../apps/web/app/modules/[id]/vault-storage.ts', import.meta.url), 'utf8');
+const { outputText } = ts.transpileModule(source, {
+  compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
+});
+const { openVault, persistVault } = await import(`data:text/javascript;base64,${Buffer.from(outputText).toString('base64')}`);
 
 function storage() {
   const items = new Map();
