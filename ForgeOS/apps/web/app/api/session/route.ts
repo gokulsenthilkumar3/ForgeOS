@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createHmac } from 'node:crypto';
 
 const sessionMinutes = 15;
 const internalApi = process.env.FORGEOS_API_INTERNAL_URL || 'http://127.0.0.1:4000';
@@ -61,9 +61,8 @@ export async function POST(request: NextRequest) {
       if (!configured) return NextResponse.json({ error: 'Owner setup is not configured' }, { status: 503 });
       const setup = await fetch(new URL('/v1/auth/setup', internalApi), { cache: 'no-store', signal: AbortSignal.timeout(15_000) });
       if (!setup.ok || !(await setup.json()).ownerRequired) return NextResponse.json({ error: 'Owner setup has ended' }, { status: 403 });
-      const actual = createHmac('sha256', secret).update(String(body.password || '')).digest();
-      const expected = createHmac('sha256', secret).update(configured).digest();
-      if (!timingSafeEqual(actual, expected)) return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
+      const { response, data } = await apiLogin('/v1/auth/setup/verify', { bootstrapPassword: body.password });
+      if (!response.ok || data.ok !== true) return NextResponse.json({ error: data.message || 'Invalid credentials' }, { status: response.status || 401 });
       const signature = createHmac('sha256', secret).update(`bootstrap:${expires}`).digest('hex');
       return setSession(NextResponse.json({ ok: true, setupOnly: true }), `b.${expires}.${signature}`, request);
     }
