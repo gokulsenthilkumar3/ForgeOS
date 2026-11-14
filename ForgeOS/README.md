@@ -6,11 +6,13 @@ This app is part of the single parent repository at `D:\Projects\ForgeOS`. The s
 
 ## Start locally
 
-1. Copy `.env.example` to `.env`, replace every placeholder password and secret, and set `FORGEOS_MINIO_IMAGE` as described below.
+1. Copy `.env.example` to `.env`, replace every placeholder password and secret, and set `FORGEOS_MINIO_IMAGE` as described below. The defaults bind the web port to `127.0.0.1` and use localhost WebAuthn settings for local development only.
 2. Start Docker Desktop, then run `docker compose up --build` from this directory.
 3. Open `http://localhost:3000` and use `FORGEOS_ADMIN_PASSWORD` only to set up the initial owner account. Enroll a hardware security key during setup; normal sign-in and protected app access require that key. Password-only sessions are restricted to hardware-key enrollment.
 
 The web routes are `/modules/<module-id>`, ForgeOS API routes are `/api/v1/*`, MathShield uses `/api/mathshield/*` and `/shield.js`, and PulseWatch uses `/api/pulsewatch/*`. Compose publishes only one application port. Set `FORGEOS_PUBLIC_PORT` if port 3000 is already in use, then open `http://localhost:<that-port>`.
+
+For production, set `FORGEOS_WEBAUTHN_RP_ID` to the browser-facing DNS name and `FORGEOS_WEBAUTHN_ORIGIN` to its exact HTTPS origin; production does not permit localhost or HTTP WebAuthn. Configure trusted attestation roots and approved AAGUIDs before enrolling keys, set `FORGEOS_SECURE_COOKIES=true`, and expose the web service only through a TLS-terminating reverse proxy. Keep the published app port bound to loopback when the proxy is on the host; if a containerized proxy requires another bind address, restrict network access so clients cannot bypass TLS.
 
 ### Storage image and existing data
 
@@ -22,7 +24,7 @@ docker inspect $minioContainer --format '{{.Config.Image}}'
 docker exec $minioContainer minio --version # when the container is running
 ```
 
-Set `FORGEOS_MINIO_IMAGE` in `.env` to that same inspected image reference before restarting. If the old container/image cannot be inspected, recover its version from your deployment records or backup before changing the image. New installations should use a reviewed, version-pinned MinIO image compatible with this Compose command. The CI workflow uses `quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z` **only with disposable test data**. That official Quay release predates MinIO's [2025-10-15 security fix](https://github.com/minio/minio/releases/tag/RELEASE.2025-10-15T17-29-55Z); do not treat the CI pin as a patched production choice. MinIO's release instructions require building the patched container from that source tag, then setting `FORGEOS_MINIO_IMAGE` to the resulting local or private-registry image. Validate storage compatibility and backup recovery before upgrading a persistent deployment.
+Set `FORGEOS_MINIO_IMAGE` in `.env` to that same inspected image reference before restarting. If the old container/image cannot be inspected, recover its version from your deployment records or backup before changing the image. New installations should use a reviewed, version-pinned MinIO image compatible with this Compose command. The CI workflow builds `forgeos-minio-ci:local` from the patched release commit `9e49d5e7a648f00e26f2246f4dc28e6b07f8c84a` using `scripts/minio-ci.Dockerfile`, **only with disposable test data**. It does not depend on a public MinIO container registry. [MinIO's release instructions](https://github.com/minio/minio/releases/tag/RELEASE.2025-10-15T17-29-55Z) require building the patched container from that source tag, then setting `FORGEOS_MINIO_IMAGE` to the resulting local or private-registry image. Validate storage compatibility and backup recovery before upgrading a persistent deployment.
 
 ## Available workbenches
 

@@ -14,6 +14,7 @@ export class SessionGuard implements CanActivate {
     if (request.path === '/v1/health' ||
       (request.path === '/v1/agent-access/projects' && request.method === 'GET') ||
       (request.path === '/v1/auth/setup' && ['GET', 'POST'].includes(request.method)) ||
+      (request.path === '/v1/auth/setup/verify' && request.method === 'POST') ||
       (request.method === 'POST' && [
         '/v1/auth/login',
         '/v1/auth/accept-invite',

@@ -206,15 +206,7 @@ export class PlatformService implements OnModuleInit, OnModuleDestroy {
     return result.rows[0].required;
   }
 
-  async actorForUser(userId: string): Promise<AuthActor> {
-    const result = await this.pool.query('SELECT id, email FROM users WHERE id = $1', [userId]);
-    if (!result.rows[0]) throw new UnauthorizedException('Authentication required');
-    return { kind: 'user', userId: result.rows[0].id, email: result.rows[0].email };
-  }
-
-  async setupOwner(rawEmail: string, password: string, bootstrapPassword: string) {
-    const email = normalizeEmail(rawEmail);
-    if (!validEmail(email) || !validPassword(password)) throw new BadRequestException('Enter a valid email and a password of 12–256 characters');
+  private checkBootstrapPassword(bootstrapPassword: string): void {
     const configured = process.env.FORGEOS_ADMIN_PASSWORD;
     const secret = process.env.FORGEOS_SESSION_SECRET;
     if (!configured || !secret || secret.length < 32) throw new UnauthorizedException('Owner setup is not configured');
@@ -226,6 +218,25 @@ export class PlatformService implements OnModuleInit, OnModuleDestroy {
       this.recordAuthenticationAttempt(throttleKey);
       throw new UnauthorizedException('Invalid bootstrap password');
     }
+    this.authenticationThrottle.reset(throttleKey);
+  }
+
+  async verifyBootstrapPassword(bootstrapPassword: string) {
+    if (!await this.ownerRequired()) throw new ForbiddenException('Owner setup has ended');
+    this.checkBootstrapPassword(bootstrapPassword);
+    return { ok: true };
+  }
+
+  async actorForUser(userId: string): Promise<AuthActor> {
+    const result = await this.pool.query('SELECT id, email FROM users WHERE id = $1', [userId]);
+    if (!result.rows[0]) throw new UnauthorizedException('Authentication required');
+    return { kind: 'user', userId: result.rows[0].id, email: result.rows[0].email };
+  }
+
+  async setupOwner(rawEmail: string, password: string, bootstrapPassword: string) {
+    const email = normalizeEmail(rawEmail);
+    if (!validEmail(email) || !validPassword(password)) throw new BadRequestException('Enter a valid email and a password of 12–256 characters');
+    this.checkBootstrapPassword(bootstrapPassword);
     const passwordHash = await hashPassword(password);
     const client = await this.pool.connect();
     try {
@@ -237,7 +248,6 @@ export class PlatformService implements OnModuleInit, OnModuleDestroy {
       await client.query(`INSERT INTO principals(workspace_id,user_id,email,role,kind)
         SELECT id,$1,$2,'owner','user' FROM workspaces`, [user.rows[0].id, email]);
       await client.query('COMMIT');
-      this.authenticationThrottle.reset(throttleKey);
       return { userId: user.rows[0].id, email };
     } catch (error) { await client.query('ROLLBACK'); throw error; }
     finally { client.release(); }
