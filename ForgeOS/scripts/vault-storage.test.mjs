@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { openVault, persistVault } from '../apps/web/app/modules/[id]/vault-storage.ts';
+import { openVault, persistVault } from '../apps/web/app/modules/[id]/vault-storage.mjs';
 
 function storage() {
   const items = new Map();
