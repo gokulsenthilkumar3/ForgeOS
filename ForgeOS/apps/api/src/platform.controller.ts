@@ -4,9 +4,9 @@ import type { AuthenticationResponseJSON, RegistrationResponseJSON } from '@simp
 import { modules, type ModuleId } from '@forgeos/contracts';
 import { PlatformService, type AuthActor } from './platform.service';
 
-type AuthRequest = { forgeosAuth: AuthActor; forgeosSession?: { expiresAt: string; method: string } };
-class OwnerInput { @IsEmail() email!: string; @IsString() @Length(12, 256) password!: string; @IsString() bootstrapPassword!: string; }
-class LoginInput { @IsEmail() email!: string; @IsString() password!: string; }
+type AuthRequest = { forgeosAuth: AuthActor };
+class OwnerInput { @IsEmail() email!: string; @IsString() @Length(12, 256) password!: string; @IsString() @Length(1, 256) bootstrapPassword!: string; }
+class LoginInput { @IsEmail() @Length(3, 254) email!: string; @IsString() @Length(1, 256) password!: string; }
 class InvitationInput { @IsEmail() email!: string; @IsIn(['admin', 'member', 'auditor']) role!: 'admin' | 'member' | 'auditor'; }
 class AcceptInvitationInput { @IsString() token!: string; @IsString() password!: string; }
 class RoleInput { @IsIn(['owner', 'admin', 'member', 'auditor']) role!: 'owner' | 'admin' | 'member' | 'auditor'; }
@@ -19,7 +19,7 @@ class WebAuthnRegisterVerifyInput {
   @IsObject() response!: RegistrationResponseJSON;
   @IsOptional() @IsUUID() approvalId?: string;
 }
-class WebAuthnAuthenticateOptionsInput { @IsEmail() email!: string; }
+class WebAuthnAuthenticateOptionsInput { @IsEmail() @Length(3, 254) email!: string; }
 class WebAuthnAuthenticateVerifyInput { @IsUUID() challengeId!: string; @IsObject() response!: AuthenticationResponseJSON; }
 class WebAuthnStepUpOptionsInput {
   @IsIn(['agent.register', 'agent.grant', 'policy.update', 'audit.export', 'webauthn.enroll']) action!: string;

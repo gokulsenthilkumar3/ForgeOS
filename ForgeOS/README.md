@@ -8,7 +8,7 @@ This app is part of the single parent repository at `D:\Projects\ForgeOS`. The s
 
 1. Copy `.env.example` to `.env`, replace every placeholder password and secret, and set `FORGEOS_MINIO_IMAGE` as described below.
 2. Start Docker Desktop, then run `docker compose up --build` from this directory.
-3. Open `http://localhost:3000` and sign in with `FORGEOS_ADMIN_PASSWORD`.
+3. Open `http://localhost:3000` and use `FORGEOS_ADMIN_PASSWORD` only to set up the initial owner account. Enroll a hardware security key during setup; normal sign-in and protected app access require that key. Password-only sessions are restricted to hardware-key enrollment.
 
 The web routes are `/modules/<module-id>`, ForgeOS API routes are `/api/v1/*`, MathShield uses `/api/mathshield/*` and `/shield.js`, and PulseWatch uses `/api/pulsewatch/*`. Compose publishes only one application port. Set `FORGEOS_PUBLIC_PORT` if port 3000 is already in use, then open `http://localhost:<that-port>`.
 
